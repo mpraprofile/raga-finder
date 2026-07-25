@@ -1,0 +1,16 @@
+{
+  "name": "Raga Finder",
+  "short_name": "Raga Finder",
+  "description": "Interactive Carnatic raga finder, swara keyboard, and note-order search - private family app.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#141416",
+  "theme_color": "#4a7dff",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

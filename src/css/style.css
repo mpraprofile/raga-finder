@@ -1,0 +1,914 @@
+/* scrollbar-gutter reserves the vertical scrollbar's width up front,
+   whether or not the page is currently tall enough to need one - without
+   it, the very first note pressed (which reveals the results list, often
+   hundreds of rows, ballooning page height from well under one screen to
+   many screens) makes a scrollbar appear where there wasn't one a moment
+   ago. Since `body` is centered with `margin: 0 auto`, that scrollbar
+   appearing/disappearing shifts the whole centered page a few pixels left
+   or right - reserving the gutter always keeps the available width (and
+   thus the centering) constant regardless of page height. */
+:root {
+  color-scheme: light dark;
+  scrollbar-gutter: stable;
+  --accent: #4a7dff;
+  --accent-soft: rgba(74, 125, 255, 0.08);
+  --card-border: #8886;
+  --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* Theme selector (Light/Dark/System) - "System" is the default (no
+   override, just the `light dark` above, following the OS); the other two
+   pin `color-scheme` explicitly, which is enough on its own to flip every
+   `canvas`/`canvastext` system-color reference used throughout this file.
+   Piano keys/badges/etc that use literal colors instead (e.g. a piano's
+   black keys should look the same regardless of page theme) are
+   deliberately untouched by this. */
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+body {
+  font-family: system-ui, sans-serif;
+  line-height: 1.5;
+  max-width: 700px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+  /* Explicit, not left to the browser's implicit default-background-from-
+     color-scheme behavior - that mechanism doesn't reliably repaint when
+     `color-scheme` changes at runtime (e.g. toggling the theme selector
+     below without a full page reload), even though ordinary declared
+     properties like these do recompute correctly. */
+  background: canvas;
+  color: canvastext;
+}
+
+/* "Forum" (Google Fonts) only ships a single 400 weight - loaded via a
+   <link> in index.html's <head>, so this falls back silently to the
+   default sans-serif stack if that request fails (e.g. offline; the app
+   itself still works fully offline, just without this one decorative
+   font - see specs/02-swara-keyboard-finder.md's "Data loading"). Weight
+   left at its normal 400 rather than bolted onto the old 700, since
+   browsers fake a bold weight Forum doesn't actually have by
+   distorting the glyphs (synthetic bold), which looks noticeably rougher
+   on a display serif face than on the plain sans-serif fallback. */
+h1 {
+  font-family: "Forum", Georgia, serif;
+  font-size: 1.75rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  text-align: center;
+  margin: 0 0 1.5rem;
+}
+
+/* Wraps the page's <h1> so an icon button (search on the main view, back
+   on the search view) can sit in a top corner without disturbing the
+   title's own centering - the button is positioned absolutely against
+   this wrapper rather than sharing a flex row with the title, which would
+   otherwise need a 3-column trick to keep the title visually centered. */
+.page-header {
+  position: relative;
+}
+
+.icon-btn {
+  position: absolute;
+  top: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: canvas;
+  color: canvastext;
+  cursor: pointer;
+  box-shadow: var(--card-shadow);
+  transition: border-color 0.12s ease, transform 0.08s ease;
+}
+
+.icon-btn:hover {
+  border-color: color-mix(in srgb, var(--card-border) 40%, var(--accent) 60%);
+}
+
+.icon-btn:active {
+  transform: scale(0.97);
+}
+
+#search-open-btn {
+  right: 0;
+}
+
+#search-back-btn {
+  left: 0;
+}
+
+.search-input-row {
+  margin: 0.5rem 0 1.25rem;
+}
+
+#raga-search-input {
+  width: 100%;
+  font-family: inherit;
+  font-size: 1rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: canvas;
+  color: canvastext;
+  box-shadow: var(--card-shadow);
+}
+
+/* Section divider before the "related ragas" tail of a name search's
+   results - same subdued, uppercase, letter-spaced treatment as the
+   reference table's header cells, so it reads as a label, not a result. */
+.search-related-heading {
+  list-style: none;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+  padding: 1rem 0.5rem 0.4rem;
+  border-top: 1px solid var(--card-border);
+  margin-top: 0.5rem;
+}
+
+.controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: stretch;
+  margin-bottom: 1.25rem;
+}
+
+/* Each direct child grows to share out whatever width is left on its own
+   wrapped line, so the row's bordered boxes sit squared to the page's
+   right edge (matching the note-labels panel above) instead of stopping
+   partway across and leaving a ragged gap - Input style/Layout each grow a
+   little when they share a line, and note-order-row grows to the full row
+   width on the line it has to itself. flex-basis stays auto (not 0) so
+   boxes keep their relative natural proportions rather than being forced
+   to exactly equal widths regardless of content. */
+.controls-row > fieldset.control-group,
+.note-order-row {
+  flex: 1 1 auto;
+}
+
+/* Within note-order-row, Mute stays its fixed natural size (it's a
+   deliberately small, fixed-width button - see item 4's min-width) and
+   note-order-group absorbs all of the row's growth instead, so its own
+   border is what reaches the right edge. */
+#note-order-group {
+  flex: 1 1 auto;
+}
+
+/* Pairs Mute with Note-order in their own nested flex row, so they always
+   stretch to match each other's height regardless of how controls-row
+   itself wraps at different viewport widths (relying on the outer row's
+   wrap-line grouping alone was fragile - the two could land on different
+   lines and stretch against the wrong neighbor). */
+/* gap trimmed from 1rem - with "Play both" added to note-order-group,
+   Mute + the group's natural (unwrapped) width came out ~1px wider than
+   the page's max content width (668px at the body's 700px max-width),
+   just barely enough to force Mute onto its own line. This closes that
+   gap with margin to spare, keeping Mute/Record-note-order/Play-both on
+   one row at the page's full width, same as Input style and Layout
+   already manage above. */
+.note-order-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: stretch;
+}
+
+.control-group {
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 0.4rem 0.7rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: center;
+  background: canvas;
+  box-shadow: var(--card-shadow);
+}
+
+.control-group legend {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  padding: 0 0.3rem;
+}
+
+.control-group label {
+  font-size: 0.85rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Sits at the top of the note-reference panel, above the table. Reuses
+   .control-group for the same card look as Input style/Layout, but drops
+   their border/shadow/margin since it's inside an already-bordered
+   <details> - just needs the segmented radio-pill look (below) and a
+   little breathing room before the table. */
+.theme-toggle {
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin-bottom: 0.8rem;
+}
+
+/* Segmented-pill look for the plain (non-table) radio groups - Input
+   style, Layout, and the theme toggle. Table-choice's small inline G1/G3
+   radios deliberately keep the native look instead (a big pill button
+   would overwhelm a dense 14-row table); scoping to .control-group here
+   naturally excludes them, since those live in a <td>, not a
+   control-group. The native radio stays in the DOM (for click/keyboard/
+   screen-reader support) but visually hidden - the label itself becomes
+   the pill, and reflects :checked via :has(). */
+.control-group label:has(input[type="radio"]) {
+  position: relative;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.control-group label:has(input[type="radio"]):hover {
+  border-color: color-mix(in srgb, var(--card-border) 40%, var(--accent) 60%);
+}
+
+.control-group label:has(input[type="radio"]:checked) {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+  font-weight: 600;
+}
+
+.control-group label:has(input[type="radio"]:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.control-group input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+}
+
+/* Smartphone-style toggle switch, replacing the native checkbox look, for
+   "Record note order" and the Loop checkboxes. Built by hiding the native
+   appearance and drawing the track/thumb via the input's own background
+   (track) and ::after (thumb) - no extra wrapper markup needed, so the
+   existing <label><input>...</label> structure and all its JS
+   (`.checked` reads/writes) keep working unchanged. */
+.control-group input[type="checkbox"],
+.playback-controls input[type="checkbox"] {
+  appearance: none;
+  width: 2.3rem;
+  height: 1.3rem;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+  background: color-mix(in srgb, canvastext 18%, canvas 82%);
+  position: relative;
+  vertical-align: middle;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.control-group input[type="checkbox"]::after,
+.playback-controls input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 50%;
+  background: canvas;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition: transform 0.15s ease;
+}
+
+.control-group input[type="checkbox"]:checked,
+.playback-controls input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.control-group input[type="checkbox"]:checked::after,
+.playback-controls input[type="checkbox"]:checked::after {
+  transform: translateX(1rem);
+}
+
+/* min-width sized to fit "Unmute" (the longer of its two labels) so the
+   button doesn't visibly resize/reflow its neighbors every time it flips
+   state - "Mute" just sits centered with a bit of extra room instead. */
+.mute-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 0.45rem 0.8rem;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: canvas;
+  color: canvastext;
+  cursor: pointer;
+  box-shadow: var(--card-shadow);
+  min-width: 6.8rem;
+  transition: background-color 0.12s ease, border-color 0.12s ease, transform 0.08s ease;
+}
+
+.mute-btn:hover {
+  border-color: color-mix(in srgb, var(--card-border) 40%, var(--accent) 60%);
+}
+
+.mute-btn:active {
+  transform: scale(0.97);
+}
+
+.mute-btn svg {
+  flex: none;
+}
+
+.mute-btn.active {
+  background: #e2434c;
+  color: white;
+  border-color: #e2434c;
+}
+
+#separate-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+}
+
+#separate-inputs[hidden],
+.mode-block[hidden] {
+  display: none;
+}
+
+.direction-block {
+  flex: 1 1 260px;
+}
+
+/* Arohana's shorter title left just enough room for Reset+Play+Loop to
+   fit on one line at the two-column separate-mode width, while
+   Avarohana's longer title (a few px wider) tipped the same row over the
+   edge and wrapped Play/Loop to a second line - the two headers looked
+   inconsistent even though nothing else about them differed. Trimmed gap
+   (and removed the h2's own redundant margin, which duplicated the gap)
+   to free up enough width that both fit on one line with margin to spare,
+   rather than leaving them a couple of pixels apart from wrapping. */
+.widget-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+/* Fixed min-width, not just intrinsic - "Arohana" and "Avarohana" differ
+   by a couple of characters, so without this each header's remaining
+   space (and thus its own wrap breakpoint for Reset+Play+Loop) drifted
+   from its sibling's by that same few pixels as the window narrowed:
+   Avarohana's row would wrap a few pixels before Arohana's, even though
+   both direction-blocks are the same width. Reserving the wider label's
+   width for every widget-header (including combined mode's "Scale",
+   harmless since it has no sibling to match there) makes every header's
+   remaining space identical, so Arohana and Avarohana wrap in lockstep. */
+.widget-header h2 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0;
+  opacity: 0.85;
+  min-width: 4.9rem;
+}
+
+.playback-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.playback-controls[hidden] {
+  display: none;
+}
+
+/* Invisible but still occupying its normal layout space - unlike [hidden]
+   above, which collapses it. Used when "Play both" hides Avarohana's
+   controls specifically (see updateControlVisibility() in app.js), so
+   Avarohana's header keeps the exact height it would have if its Play/Loop
+   were actually showing (wrapped or not, at whatever the current viewport
+   width is) - the piano below it never shifts as a result of toggling
+   "Play both", since the space is reserved either way. */
+.controls-invisible {
+  visibility: hidden;
+}
+
+.playback-controls label {
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+/* Idle = green ("Play", ready to go); playing = red ("Stop"). Icon uses
+   currentColor so it always matches the text without a separate rule.
+   min-width keeps the button a constant size across both labels - "Play"
+   and "Stop" render at different natural widths (measured: 76.3px vs
+   79.0px) despite being the same character count. An earlier value
+   (4.9rem = 78.4px) was picked without measuring and came out just under
+   "Stop"'s actual width, so the button could still grow by a fraction of a
+   pixel on click - just enough, at a header already sitting close to its
+   wrap threshold, to tip Play/Loop onto a second line and push the piano
+   down. 5rem clears "Stop"'s measured width with margin to spare. */
+.playback-controls button {
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0.4rem 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  border: 1px solid #2c9d5f;
+  border-radius: 8px;
+  background: canvas;
+  color: #1f7a45;
+  cursor: pointer;
+  box-shadow: var(--card-shadow);
+  min-width: 5rem;
+  transition: border-color 0.12s ease, color 0.12s ease, transform 0.08s ease;
+}
+
+.playback-controls button svg {
+  flex: none;
+}
+
+.playback-controls button.is-playing {
+  border-color: #d3453f;
+  color: #c0392b;
+}
+
+.playback-controls button:hover {
+  filter: brightness(0.95);
+}
+
+.playback-controls button:active {
+  transform: scale(0.97);
+}
+
+.reset-btn {
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: canvas;
+  color: canvastext;
+  cursor: pointer;
+  transition: border-color 0.12s ease, transform 0.08s ease;
+}
+
+.reset-btn:hover {
+  border-color: color-mix(in srgb, var(--card-border) 40%, var(--accent) 60%);
+}
+
+.reset-btn:active {
+  transform: scale(0.97);
+}
+
+.piano {
+  position: relative;
+  height: 200px;
+  margin: 0.5rem 0 1.5rem;
+  user-select: none;
+}
+
+.key {
+  font-family: inherit;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.piano .key {
+  position: absolute;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 0.6rem;
+}
+
+.button-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.5rem 0 1rem;
+}
+
+/* No wrap: each button's width (set inline by buttons.js, as a percentage
+   of this row) is computed to always fit exactly, so wrapping never needs
+   to kick in - and would break the fixed 6-column basis if it did. */
+.button-sub-row {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: 0.4rem;
+}
+
+/* Width comes from buttons.js's inline style (a percentage, not a fixed
+   rem value) - every button across every row shares the same 6-column
+   basis, so a lone S/P button is exactly as wide as one of row 2's 6, and
+   all of them resize together as the page width changes.
+   Height is fixed and the label sits flush at the bottom (same technique
+   as .piano .key below), leaving the top clear for the order-badge stack
+   regardless of whether a badge is actually showing right now - that
+   keeps every button the same height, badge or no badge, and stops the
+   badge from ever landing on top of the label the way it used to. */
+.button-key {
+  position: relative;
+  box-sizing: border-box;
+  height: 3.4rem;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 0.5rem;
+  font-size: 0.85rem;
+  border: 1px solid #8886;
+  border-radius: 8px;
+  background: canvas;
+  color: canvastext;
+  transition: background-color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.button-key:hover:not(.selected) {
+  border-color: #4a7dff88;
+  background: color-mix(in srgb, canvas 92%, #4a7dff 8%);
+}
+
+.button-key.selected {
+  background: #4a7dff;
+  color: white;
+  border-color: #4a7dff;
+  box-shadow: 0 1px 4px rgba(74, 125, 255, 0.35);
+}
+
+.assembler {
+  margin: 0.5rem 0 1rem;
+}
+
+.assembler-label {
+  font-size: 0.75rem;
+  opacity: 0.65;
+  margin: 0.6rem 0 0.3rem;
+}
+
+.tile-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-height: 2.2rem;
+  padding: 0.5rem;
+  border: 1px solid #8884;
+  border-radius: 10px;
+}
+
+/* Fixed width AND height (not just width) - a stacked two-line label (e.g.
+   "R2/G1") needs more vertical space than a plain one-line label, so
+   height alone was still varying chip-to-chip until this was added.
+   The label sits flush at the bottom (same technique as .button-key and
+   .piano .key), leaving the top clear for the order-badge stack - keeps
+   every tile the same height regardless of whether it currently shows a
+   badge, and stops the badge landing on top of the label. */
+.tile {
+  position: relative;
+  box-sizing: border-box;
+  width: 3.2rem;
+  height: 3.4rem;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 0.4rem;
+  font-size: 0.8rem;
+  text-align: center;
+  border: 1px solid #8886;
+  border-radius: 14px;
+  background: canvas;
+  color: canvastext;
+  transition: background-color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.tile:hover:not(.selected) {
+  border-color: #4a7dff88;
+  background: color-mix(in srgb, canvas 92%, #4a7dff 8%);
+}
+
+.tile.selected {
+  background: #4a7dff;
+  color: white;
+  border-color: #4a7dff;
+  box-shadow: 0 1px 4px rgba(74, 125, 255, 0.35);
+}
+
+/* Centered horizontally, near the top of the key/tile - not at a corner.
+   Two earlier attempts hung it off the top-right corner (first with a
+   negative offset entirely outside the box, then just 2px inside); both
+   still fell within the ~3.5%-of-width strip that an adjacent black key's
+   box overlaps on a piano, so it got visually painted over (and ate the
+   click meant for the key underneath). Dead center is clear of that zone
+   on every key, white or black. The stack itself is positioned here; the
+   individual badges inside it are stacked in normal flow, not each
+   independently absolutely-positioned (which is what made repeated-note
+   badges overlap each other before). */
+.order-badge-stack {
+  position: absolute;
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  z-index: 3;
+}
+
+/* Clickable - removes that exact recorded occurrence (see
+   buildOrderBadgeStack in notation.js). Scales up slightly on hover/focus
+   as the only affordance hint, since a 14px circle has no room for
+   anything fancier like an icon. */
+.order-badge {
+  background: #ffb300;
+  color: #3a2900;
+  font-size: 0.6rem;
+  font-weight: 700;
+  border-radius: 50%;
+  width: 14px;
+  height: 14px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.order-badge:hover,
+.order-badge:focus-visible {
+  transform: scale(1.2);
+  box-shadow: 0 0 0 3px rgba(255, 179, 0, 0.35);
+  outline: none;
+}
+
+.key-label {
+  font-size: 0.7rem;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* Compound labels (e.g. R2/G1) stack G/N on top of R/D, on both white and
+   black keys - same font-size as a plain single-line label (all key
+   labels read at one consistent size), just centered/wrapped over two
+   lines so it still fits the narrower black keys. */
+.key-label.stacked {
+  line-height: 1.15;
+  text-align: center;
+  white-space: normal;
+}
+
+.white-key {
+  top: 0;
+  height: 100%;
+  background: #fdfdfd;
+  color: #222;
+  border: 1px solid #ccc;
+  border-radius: 0 0 8px 8px;
+  z-index: 1;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.white-key:hover:not(.selected) {
+  background: #f0f4ff;
+}
+
+.white-key.selected {
+  background: #cfe0ff;
+  border-color: var(--accent);
+  box-shadow: inset 0 -3px 0 var(--accent);
+}
+
+.black-key {
+  top: 0;
+  height: 60%;
+  background: #222;
+  color: #eee;
+  border: 1px solid #000;
+  border-radius: 0 0 6px 6px;
+  z-index: 2;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.black-key:hover:not(.selected) {
+  background: #333;
+}
+
+.black-key.selected {
+  background: var(--accent);
+  border-color: #2a5adf;
+  box-shadow: inset 0 -3px 0 #2a5adf;
+}
+
+.prompt {
+  opacity: 0.7;
+  font-style: italic;
+}
+
+.results {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.result-row {
+  padding: 0.6rem 0.5rem;
+  border-radius: 6px;
+  border-bottom: 1px solid #8883;
+  transition: background-color 0.12s ease;
+}
+
+.result-row:hover {
+  background: color-mix(in srgb, transparent, canvastext 5%);
+}
+
+.result-row.exact {
+  background: var(--accent-soft);
+}
+
+.result-row.exact:hover {
+  background: color-mix(in srgb, var(--accent-soft), canvastext 5%);
+}
+
+/* Icon-only, round - a text-labeled button like .playback-controls button
+   would dominate a single result row; this just needs to read as "the
+   same Play/Stop control, shrunk down" via the shared green/red convention. */
+.result-play-btn {
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+  margin-right: 0.5rem;
+  border: 1px solid #2c9d5f;
+  border-radius: 50%;
+  background: canvas;
+  color: #1f7a45;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease, transform 0.08s ease;
+}
+
+.result-play-btn:hover {
+  filter: brightness(0.95);
+}
+
+.result-play-btn:active {
+  transform: scale(0.94);
+}
+
+.result-play-btn.is-playing {
+  border-color: #d3453f;
+  color: #c0392b;
+}
+
+.raga-name {
+  font-weight: 600;
+  margin-right: 0.5rem;
+}
+
+.badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: white;
+  background: #2c9d5f;
+  border-radius: 6px;
+  padding: 0.15rem 0.45rem;
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+
+.mela-context {
+  opacity: 0.7;
+  font-size: 0.85rem;
+}
+
+.scales {
+  font-size: 0.85rem;
+  opacity: 0.85;
+  margin-top: 0.2rem;
+}
+
+/* Marks the notes in a raga's own scale that the user actually pressed -
+   a milder green than .badge's, since this highlights many notes inline
+   rather than calling out one summary word. */
+.note-match {
+  background: rgba(74, 189, 125, 0.28);
+  border-radius: 3px;
+  padding: 0 0.15rem;
+}
+
+.empty {
+  opacity: 0.7;
+  font-style: italic;
+  padding: 0.6rem 0;
+}
+
+.note-reference,
+.controls-panel {
+  margin: 1rem 0 1.5rem;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  background: canvas;
+  box-shadow: var(--card-shadow);
+}
+
+.note-reference summary,
+.controls-panel summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.note-reference summary:hover,
+.controls-panel summary:hover {
+  color: var(--accent);
+}
+
+/* The controls-row it wraps already carries its own margin-bottom (for
+   spacing when it sat directly on the page) - inside the panel's own
+   padding that would just double up as a redundant gap before the box's
+   bottom border. */
+.controls-panel .controls-row {
+  margin-bottom: 0;
+  margin-top: 0.6rem;
+}
+
+.reference-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin: 0.8rem 0;
+}
+
+.reference-table th,
+.reference-table td {
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid #8883;
+}
+
+.reference-table th {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+  font-weight: 600;
+}
+
+.reference-table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, transparent, canvastext 4%);
+}
+
+.label-prefs-intro {
+  font-size: 0.8rem;
+  opacity: 0.75;
+  margin: 0.8rem 0;
+}
+
+.table-choice {
+  display: inline-flex;
+  gap: 0.7rem;
+  margin-left: 0.3rem;
+}
+
+.table-choice label {
+  cursor: pointer;
+  white-space: nowrap;
+  font-weight: 600;
+}

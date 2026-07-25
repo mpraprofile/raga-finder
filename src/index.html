@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Raga Finder</title>
+
+  <!-- PWA: installable "Add to Home Screen" on Android/iOS - see
+       specs/02-swara-keyboard-finder.md's "Distribution" -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#4a7dff">
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="icon" href="icons/favicon-16.png" sizes="16x16" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Raga Finder">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Forum&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="main-view">
+  <div class="page-header">
+    <h1>Raga Finder</h1>
+    <button type="button" id="search-open-btn" class="icon-btn" aria-label="Search ragas by name" title="Search ragas by name">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    </button>
+  </div>
+
+  <details class="note-reference">
+    <summary>Carnatic note names &amp; label preferences</summary>
+    <div class="control-group theme-toggle">
+      <label><input type="radio" name="theme-pref" value="system" checked> System</label>
+      <label><input type="radio" name="theme-pref" value="light"> Light</label>
+      <label><input type="radio" name="theme-pref" value="dark"> Dark</label>
+    </div>
+    <table class="reference-table">
+      <thead>
+        <tr><th>Name</th><th>Code</th></tr>
+      </thead>
+      <tbody id="note-reference-body"></tbody>
+    </table>
+    <p class="label-prefs-intro">
+      Some schools number Gandhara/Nishada variants by pitch order (Shuddha=1, being lowest); others by frequency
+      of use instead, since Shuddha is rare/vivadi - pushing it to "3" and cycling Sadharana/Kaisiki and
+      Antara/Kakali down to "1" and "2". Pick your convention using the Shuddha Gandhara / Shuddha Nishada rows
+      above - the other rows in each family update to match. This choice changes every place a note is shown
+      across the app, including each raga's own result further down - it's just a relabeling of the same scale,
+      not a change to what the scale is.
+    </p>
+  </details>
+
+  <details class="controls-panel" open>
+    <summary>Controls</summary>
+    <div class="controls-row">
+      <fieldset class="control-group">
+        <legend>Input style</legend>
+        <label><input type="radio" name="input-style" value="piano" checked> Piano</label>
+        <label><input type="radio" name="input-style" value="buttons"> Buttons</label>
+        <label><input type="radio" name="input-style" value="assembler"> Assembler</label>
+      </fieldset>
+      <fieldset class="control-group">
+        <legend>Layout</legend>
+        <label><input type="radio" name="layout-mode" value="combined" checked> Combined</label>
+        <label><input type="radio" name="layout-mode" value="separate"> Separate arohana/avarohana</label>
+      </fieldset>
+      <div class="note-order-row">
+        <button type="button" class="mute-btn" id="mute-btn" aria-pressed="false"></button>
+        <div class="control-group" id="note-order-group">
+          <label><input type="checkbox" id="order-mode-toggle"> Record note order (for vakra search)</label>
+          <label id="play-both-label" hidden><input type="checkbox" id="play-both-toggle" checked> Play both (Arohana + Avarohana)</label>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <div class="mode-block" id="combined-block">
+    <div class="widget-header">
+      <h2>Scale</h2>
+      <button class="reset-btn" id="reset-btn">Reset</button>
+      <div class="playback-controls" id="combined-controls">
+        <button id="play-btn">Play</button>
+        <label><input type="checkbox" id="loop-toggle"> Loop</label>
+      </div>
+    </div>
+    <div id="combined-input"></div>
+  </div>
+
+  <div id="separate-inputs" hidden>
+    <div class="direction-block">
+      <div class="widget-header">
+        <h2>Arohana</h2>
+        <button class="reset-btn" id="arohana-reset-btn">Reset</button>
+        <div class="playback-controls" id="arohana-controls">
+          <button id="arohana-play-btn">Play</button>
+          <label><input type="checkbox" id="arohana-loop-toggle"> Loop</label>
+        </div>
+      </div>
+      <div id="arohana-input"></div>
+    </div>
+    <div class="direction-block">
+      <div class="widget-header">
+        <h2>Avarohana</h2>
+        <button class="reset-btn" id="avarohana-reset-btn">Reset</button>
+        <div class="playback-controls" id="avarohana-controls">
+          <button id="avarohana-play-btn">Play</button>
+          <label><input type="checkbox" id="avarohana-loop-toggle"> Loop</label>
+        </div>
+      </div>
+      <div id="avarohana-input"></div>
+    </div>
+  </div>
+
+  <p id="prompt" class="prompt">Press some keys to find matching ragas.</p>
+  <ul id="results" class="results"></ul>
+  </div>
+
+  <div id="search-view" hidden>
+    <div class="page-header">
+      <button type="button" id="search-back-btn" class="icon-btn" aria-label="Back">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      </button>
+      <h1>Search Ragas</h1>
+    </div>
+    <div class="search-input-row">
+      <input type="text" id="raga-search-input" list="raga-names-datalist" placeholder="Type a raga name…" autocomplete="off">
+      <datalist id="raga-names-datalist"></datalist>
+    </div>
+    <p id="search-prompt" class="prompt">Type a raga name to search.</p>
+    <ul id="search-results" class="results"></ul>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
