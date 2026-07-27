@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Raga Finder</title>
+  <title>SwaRaga</title>
 
   <!-- PWA: installable "Add to Home Screen" on Android/iOS - see
        specs/02-swara-keyboard-finder.md's "Distribution" -->
@@ -14,7 +14,7 @@
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="Raga Finder">
+  <meta name="apple-mobile-web-app-title" content="SwaRaga">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -24,19 +24,14 @@
 <body>
   <div id="main-view">
   <div class="page-header">
-    <h1>Raga Finder</h1>
+    <h1>SwaRaga</h1>
     <button type="button" id="search-open-btn" class="icon-btn" aria-label="Search ragas by name" title="Search ragas by name">
-      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <span class="search-icon-img" aria-hidden="true"></span>
     </button>
   </div>
 
   <details class="note-reference">
     <summary>Carnatic note names &amp; label preferences</summary>
-    <div class="control-group theme-toggle">
-      <label><input type="radio" name="theme-pref" value="system" checked> System</label>
-      <label><input type="radio" name="theme-pref" value="light"> Light</label>
-      <label><input type="radio" name="theme-pref" value="dark"> Dark</label>
-    </div>
     <table class="reference-table">
       <thead>
         <tr><th>Name</th><th>Code</th></tr>
@@ -56,22 +51,33 @@
   <details class="controls-panel" open>
     <summary>Controls</summary>
     <div class="controls-row">
-      <fieldset class="control-group">
+      <fieldset class="control-group theme-toggle" id="theme-group">
+        <legend>Theme</legend>
+        <label><input type="radio" name="theme-pref" value="system" checked> System</label>
+        <label><input type="radio" name="theme-pref" value="light"> Light</label>
+        <label><input type="radio" name="theme-pref" value="dark"> Dark</label>
+      </fieldset>
+      <fieldset class="control-group" id="input-style-group">
         <legend>Input style</legend>
         <label><input type="radio" name="input-style" value="piano" checked> Piano</label>
+        <label><input type="radio" name="input-style" value="wheel"> Swara wheel</label>
         <label><input type="radio" name="input-style" value="buttons"> Buttons</label>
-        <label><input type="radio" name="input-style" value="assembler"> Assembler</label>
       </fieldset>
-      <fieldset class="control-group">
+      <fieldset class="control-group" id="layout-group">
         <legend>Layout</legend>
         <label><input type="radio" name="layout-mode" value="combined" checked> Combined</label>
         <label><input type="radio" name="layout-mode" value="separate"> Separate arohana/avarohana</label>
       </fieldset>
       <div class="note-order-row">
         <button type="button" class="mute-btn" id="mute-btn" aria-pressed="false"></button>
+        <!-- Nothing in here is ever hidden. Whatever doesn't apply right now
+             is greyed and disabled in place by updateControlAvailability(),
+             so the panel never reflows underneath you. -->
         <div class="control-group" id="note-order-group">
-          <label><input type="checkbox" id="order-mode-toggle"> Record note order (for vakra search)</label>
-          <label id="play-both-label" hidden><input type="checkbox" id="play-both-toggle" checked> Play both (Arohana + Avarohana)</label>
+          <label id="free-play-label"><input type="checkbox" id="free-play-toggle"> Free play Piano</label>
+          <label id="order-mode-label"><input type="checkbox" id="order-mode-toggle"> Record note order (for vakra search)</label>
+          <label id="play-both-label"><input type="checkbox" id="play-both-toggle" checked> Play both (Arohana + Avarohana)</label>
+          <label id="transpose-both-label"><input type="checkbox" id="transpose-both-toggle" checked> Transpose both (Arohana + Avarohana)</label>
         </div>
       </div>
     </div>
@@ -79,12 +85,25 @@
 
   <div class="mode-block" id="combined-block">
     <div class="widget-header">
-      <h2>Scale</h2>
-      <button class="reset-btn" id="reset-btn">Reset</button>
+      <h2 id="combined-title">Scale</h2>
+      <button type="button" class="reset-btn" id="reset-btn">Clear</button>
       <div class="playback-controls" id="combined-controls">
         <button id="play-btn">Play</button>
         <label><input type="checkbox" id="loop-toggle"> Loop</label>
       </div>
+    </div>
+    <div class="transpose-row" id="combined-transpose">
+      <div class="transpose-lead">
+        <button type="button" class="set-zero-btn" id="combined-transpose-reset" title="Treat the current selection as the new zero point">Set as 0</button>
+      </div>
+      <div class="transpose-main">
+        <button type="button" class="transpose-btn" id="combined-transpose-down" title="Transpose down: make the previous selected note Sa">&#9666;</button>
+        <span class="transpose-count down" id="combined-transpose-count-down"></span>
+        <span class="transpose-title">Transpose</span>
+        <span class="transpose-count up" id="combined-transpose-count-up"></span>
+        <button type="button" class="transpose-btn" id="combined-transpose-up" title="Transpose up: make the next selected note Sa">&#9656;</button>
+      </div>
+      <div class="transpose-tail"></div>
     </div>
     <div id="combined-input"></div>
   </div>
@@ -93,22 +112,48 @@
     <div class="direction-block">
       <div class="widget-header">
         <h2>Arohana</h2>
-        <button class="reset-btn" id="arohana-reset-btn">Reset</button>
+        <button type="button" class="reset-btn" id="arohana-reset-btn">Clear</button>
         <div class="playback-controls" id="arohana-controls">
           <button id="arohana-play-btn">Play</button>
           <label><input type="checkbox" id="arohana-loop-toggle"> Loop</label>
         </div>
+      </div>
+      <div class="transpose-row" id="arohana-transpose">
+        <div class="transpose-lead">
+          <button type="button" class="set-zero-btn" id="arohana-transpose-reset" title="Treat the current selection as the new zero point">Set as 0</button>
+        </div>
+        <div class="transpose-main">
+          <button type="button" class="transpose-btn" id="arohana-transpose-down" title="Transpose down: make the previous selected note Sa">&#9666;</button>
+          <span class="transpose-count down" id="arohana-transpose-count-down"></span>
+          <span class="transpose-title">Transpose</span>
+          <span class="transpose-count up" id="arohana-transpose-count-up"></span>
+          <button type="button" class="transpose-btn" id="arohana-transpose-up" title="Transpose up: make the next selected note Sa">&#9656;</button>
+        </div>
+        <div class="transpose-tail"></div>
       </div>
       <div id="arohana-input"></div>
     </div>
     <div class="direction-block">
       <div class="widget-header">
         <h2>Avarohana</h2>
-        <button class="reset-btn" id="avarohana-reset-btn">Reset</button>
+        <button type="button" class="reset-btn" id="avarohana-reset-btn">Clear</button>
         <div class="playback-controls" id="avarohana-controls">
           <button id="avarohana-play-btn">Play</button>
           <label><input type="checkbox" id="avarohana-loop-toggle"> Loop</label>
         </div>
+      </div>
+      <div class="transpose-row" id="avarohana-transpose">
+        <div class="transpose-lead">
+          <button type="button" class="set-zero-btn" id="avarohana-transpose-reset" title="Treat the current selection as the new zero point">Set as 0</button>
+        </div>
+        <div class="transpose-main">
+          <button type="button" class="transpose-btn" id="avarohana-transpose-down" title="Transpose down: make the previous selected note Sa">&#9666;</button>
+          <span class="transpose-count down" id="avarohana-transpose-count-down"></span>
+          <span class="transpose-title">Transpose</span>
+          <span class="transpose-count up" id="avarohana-transpose-count-up"></span>
+          <button type="button" class="transpose-btn" id="avarohana-transpose-up" title="Transpose up: make the next selected note Sa">&#9656;</button>
+        </div>
+        <div class="transpose-tail"></div>
       </div>
       <div id="avarohana-input"></div>
     </div>

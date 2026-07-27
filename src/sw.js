@@ -10,7 +10,7 @@
 // out of. Network-first means anyone with connectivity always gets
 // current content; the cache exists purely for when they don't have any.
 
-const CACHE_NAME = "raga-finder-v1"; // bump whenever the precache list below changes
+const CACHE_NAME = "raga-finder-v2"; // bump whenever the precache list below changes
 
 const PRECACHE_URLS = [
   "./index.html",
@@ -20,9 +20,14 @@ const PRECACHE_URLS = [
   "./js/ragas.js",
   "./js/audio.js",
   "./js/notation.js",
+  // One entry per input style. cache.addAll() is all-or-nothing - a single
+  // 404 rejects the whole install and leaves the app with no offline copy
+  // at all - so this list has to track src/js/inputs/ exactly. It listed
+  // assembler.js for a while after that style was merged into Buttons and
+  // its file deleted, which silently disabled precaching entirely.
   "./js/inputs/piano.js",
   "./js/inputs/buttons.js",
-  "./js/inputs/assembler.js",
+  "./js/inputs/wheel.js",
   "../data/ragas.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",

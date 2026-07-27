@@ -1,11 +1,23 @@
-import { loadRagas, match, matchSeparate, matchOrdered, matchOrderedSeparate, melaContext, searchByName, relatedByMela } from "./ragas.js";
-import { playPianoTone, setMuted } from "./audio.js";
+import {
+  loadRagas,
+  match,
+  matchSeparate,
+  matchOrdered,
+  matchOrderedSeparate,
+  melaContext,
+  melakartaNames,
+  grahaTonic,
+  rotateToTonic,
+  searchByName,
+  relatedByMela,
+} from "./ragas.js";
+import { playPianoTone, playBlockerSound, setMuted } from "./audio.js";
 import { REFERENCE_ROWS, referenceRowCode, renumberLabel } from "./notation.js";
 import * as piano from "./inputs/piano.js";
 import * as buttons from "./inputs/buttons.js";
-import * as assembler from "./inputs/assembler.js";
+import * as wheel from "./inputs/wheel.js";
 
-const INPUT_RENDERERS = { piano, buttons, assembler };
+const INPUT_RENDERERS = { piano, buttons, wheel };
 const NOTE_GAP_MS = 450;
 // Extra pause at the loop boundary (on top of the usual NOTE_GAP_MS after
 // the last note), so a looped phrase doesn't run straight into its own
@@ -20,11 +32,33 @@ const ICON_MUTED =
 const ICON_PLAY = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l13-7.5-13-7.5z"/></svg>';
 const ICON_STOP = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>';
 
-let inputStyle = "piano"; // piano | buttons | assembler
+let inputStyle = "piano"; // piano | buttons | wheel
 let layoutMode = "combined"; // combined | separate
 let orderMode = false; // record click order, for vakra search
+// Piano only: taps just sound the note and leave the scale alone, so the
+// keyboard can be noodled on without wrecking a search in progress.
+let freePlay = false;
+// Separate mode only: a transpose press moves both directions by the one
+// tonic, instead of each picking its own (which would pull the two apart).
+// Mirrors #transpose-both-toggle, which is the control of record.
+let transposeBoth = true;
+
+// How far each selection has been transposed from its baseline. `steps` is
+// the net number of button presses, shown next to the Transpose title so a
+// rotated scale doesn't lose track of where it came from. `offset` is the
+// same journey in semitones - where Sa now physically sits - which is what
+// slides the Piano's labels along its keys. "Reset base" zeroes both:
+// wherever you've got to becomes the new home.
+const transposeState = {
+  combined: { steps: 0, offset: 0 },
+  arohana: { steps: 0, offset: 0 },
+  avarohana: { steps: 0, offset: 0 },
+};
+
+const EMPTY_PROMPT = "Select some swaras to find matching ragas.";
 let muted = false;
 let ragas = [];
+let melaNames = new Map(); // mela number -> that melakarta's name, filled after load
 const labelPrefs = { gandhara: "alt", nishada: "alt" };
 
 // Insertion-ordered arrays, not Sets - order is always tracked (cheap), and
@@ -44,6 +78,13 @@ const avarohanaContainer = document.getElementById("avarohana-input");
 const resultsEl = document.getElementById("results");
 const promptEl = document.getElementById("prompt");
 const orderModeToggle = document.getElementById("order-mode-toggle");
+const orderModeLabel = document.getElementById("order-mode-label");
+const freePlayLabel = document.getElementById("free-play-label");
+const freePlayToggle = document.getElementById("free-play-toggle");
+const transposeBothLabel = document.getElementById("transpose-both-label");
+const transposeBothToggle = document.getElementById("transpose-both-toggle");
+const layoutGroup = document.getElementById("layout-group");
+const combinedTitle = document.getElementById("combined-title");
 
 const combinedControls = document.getElementById("combined-controls");
 const playBtn = document.getElementById("play-btn");
@@ -80,17 +121,45 @@ function toggleInList(list, degree) {
   }
 }
 
+function countOccurrences(list, degree) {
+  return list.reduce((n, d) => (d === degree ? n + 1 : n), 0);
+}
+
 // In Record note order mode, a note can recur (vakra ragas repeat notes
 // within a scale), so re-tapping an already-selected note appends another
 // occurrence instead of deselecting it - Reset is the only way to clear.
 // Outside order mode, keep the plain select/deselect toggle.
+//
+// Piano-only functional cap: piano.MAX_VISIBLE_BADGES (5) is also the most
+// occurrences one note can be recorded - not just how many badges show
+// (see piano.js). Past the cap, a tap neither records a new occurrence nor
+// plays the note's own tone; it plays a distinct "blocked" sound instead,
+// so it's audibly obvious the tap did nothing rather than a silent no-op.
+// Buttons has no such cap - only Piano's badge stack has the space problem
+// this is guarding against.
+//
+// Returns whether the selection actually changed, so a refused tap (the cap)
+// or a deliberately inert one (free play) doesn't drag a re-render - and,
+// more to the point, doesn't restart a sequence that's currently playing.
 function addOrToggle(list, degree) {
+  // Free play (Piano only): sound the note and change nothing. Every key
+  // speaks, including one that's already selected - there's no "deselect"
+  // to keep silent here, so the silent-deselect rule doesn't apply.
+  if (freePlay && inputStyle === "piano") {
+    playPianoTone(degree);
+    return false;
+  }
   if (orderMode) {
+    if (inputStyle === "piano" && countOccurrences(list, degree) >= piano.MAX_VISIBLE_BADGES) {
+      playBlockerSound();
+      return false;
+    }
     list.push(degree);
     playPianoTone(degree);
   } else {
     toggleInList(list, degree);
   }
+  return true;
 }
 
 // Assembler-only: its palette stays permanently populated (see
@@ -130,17 +199,142 @@ function orderMapFor(list) {
   return map;
 }
 
+// Replaces the entire selection in one go - graha bhedam rotation and
+// sweep-select (see specs/03-swara-wheel.md) both change every note at
+// once, which none of the existing per-note callbacks can express. Follows
+// the same pattern as the rest: mutate the list in place (it's the live
+// array every other path shares), then restart playback, re-render, re-match.
+// Piano and Buttons ignore this prop, as they already ignore props they
+// don't use.
+function replaceList(list, newList) {
+  list.splice(0, list.length, ...newList);
+}
+
+// --- Transpose (graha bhedam) -------------------------------------------
+// One row per block, under that block's Play/Loop controls (see index.html),
+// so it belongs to the *selection* rather than to any one input style - which
+// is what lets Piano have it too.
+
+function listFor(which) {
+  return which === "arohana" ? arohanaSel : which === "avarohana" ? avarohanaSel : combined;
+}
+
+// Which selections a press in `which`'s row moves. In separate mode with
+// "Transpose both" on, one press moves the pair; combined mode only ever has
+// the one.
+function transposeTargets(which) {
+  if (which === "combined") return ["combined"];
+  return transposeBoth ? ["arohana", "avarohana"] : [which];
+}
+
+// Where Sa now sits relative to the baseline, normalised to [-5, +6] rather
+// than 0..11: this is what slides the Piano's key labels, and the nearer of
+// the two equivalent directions is both the shorter visual jump and exactly
+// the range the extended keyboard covers (see piano.js).
+function normaliseOffset(semitones) {
+  return ((((semitones + 5) % 12) + 12) % 12) - 5;
+}
+
+// The tonic is always taken from the selection whose control was pressed, and
+// then applied to every target. Letting each direction pick its own
+// next-selected-note would shift them by different intervals and quietly turn
+// one raga into two unrelated ones - see grahaTonic in ragas.js.
+function transposeSelection(which, direction) {
+  const tonic = grahaTonic(listFor(which), direction);
+  if (tonic === null) return;
+  const options = { ordered: orderMode };
+
+  for (const target of transposeTargets(which)) {
+    const list = listFor(target);
+    replaceList(list, rotateToTonic(list, tonic, options));
+    const state = transposeState[target];
+    state.steps += direction >= 0 ? 1 : -1;
+    state.offset = normaliseOffset(state.offset + tonic);
+  }
+
+  if (which === "combined") restartIfPlaying(combinedPlayer);
+  else restartSeparatePlayers();
+  renderInputs();
+  renderResults();
+}
+
+// "Reset base": keep the notes exactly where they are and forget how they got
+// there, so the current scale becomes the new zero. On Piano that also drops
+// the label offset, sliding the scale back to the home octave.
+function resetTransposeBase(which) {
+  for (const target of transposeTargets(which)) {
+    transposeState[target].steps = 0;
+    transposeState[target].offset = 0;
+  }
+  renderInputs();
+}
+
+function wireTransposeRow(which) {
+  document.getElementById(`${which}-transpose-down`).addEventListener("click", () => transposeSelection(which, -1));
+  document.getElementById(`${which}-transpose-up`).addEventListener("click", () => transposeSelection(which, 1));
+  document.getElementById(`${which}-transpose-reset`).addEventListener("click", () => resetTransposeBase(which));
+}
+["combined", "arohana", "avarohana"].forEach(wireTransposeRow);
+
+// Arrows are live only when there are at least two distinct pitch classes to
+// hand the tonic between - transposing snaps to selected notes, not to
+// semitones. The step count sits in one of two fixed-width slots either side
+// of the title: down-transposes read to the left of the word, up-transposes
+// to the right, so the sign is reinforced by which side it lands on and the
+// arrows never shift as the number appears. Zero shows nothing at all - no
+// number is the clearest way to say "not transposed".
+function renderTransposeRow(which) {
+  const { steps } = transposeState[which];
+  const available = !inFreePlayMode() && !(which === "avarohana" && layoutMode === "separate" && transposeBoth);
+  const canTranspose = available && new Set(listFor(which).map((d) => d % 12)).size >= 2;
+
+  setControlEnabled(document.getElementById(`${which}-transpose-down`), canTranspose);
+  setControlEnabled(document.getElementById(`${which}-transpose-up`), canTranspose);
+  setControlEnabled(document.getElementById(`${which}-transpose-reset`), available && steps !== 0);
+
+  document.getElementById(`${which}-transpose-count-down`).textContent = steps < 0 ? String(steps) : "";
+  document.getElementById(`${which}-transpose-count-up`).textContent = steps > 0 ? `+${steps}` : "";
+  document.getElementById(`${which}-transpose`).classList.toggle("control-disabled", !available);
+}
+
+function renderTransposeRows() {
+  ["combined", "arohana", "avarohana"].forEach(renderTransposeRow);
+}
+
+// Free play turns the page into just a keyboard: it's Piano-only, and while
+// it's on there is no selection to search with, so the layout choice, the
+// scale controls all grey out in place (see updateControlAvailability).
+function inFreePlayMode() {
+  return freePlay && inputStyle === "piano";
+}
+
 function renderInputs() {
   const renderer = INPUT_RENDERERS[inputStyle];
+  renderTransposeRows();
+  // Piano's two directions stack; a keyboard is far too wide to halve.
+  separateContainer.classList.toggle("stacked", inputStyle === "piano");
 
-  if (layoutMode === "combined") {
+  if (layoutMode === "combined" || inFreePlayMode()) {
     renderer.render(combinedContainer, {
       selected: new Set(combined),
       list: combined,
       labelPrefs,
       order: orderMapFor(combined),
+      // Only combined mode gets the wheel's centre summary: in separate
+      // mode both wheels would show the same text (matchSeparate returns
+      // one joint result list for both directions), which reads as a bug
+      // rather than as information.
+      summary: selectionSummary(),
+      labelOffset: transposeState.combined.offset,
+      freePlay: inFreePlayMode(),
+      onReplace: (newList) => {
+        replaceList(combined, newList);
+        restartIfPlaying(combinedPlayer);
+        renderInputs();
+        renderResults();
+      },
       onToggle: (degree) => {
-        addOrToggle(combined, degree);
+        if (!addOrToggle(combined, degree)) return;
         restartIfPlaying(combinedPlayer);
         renderInputs();
         renderResults();
@@ -170,8 +364,15 @@ function renderInputs() {
       list: arohanaSel,
       labelPrefs,
       order: orderMapFor(arohanaSel),
+      labelOffset: transposeState.arohana.offset,
+      onReplace: (newList) => {
+        replaceList(arohanaSel, newList);
+        restartSeparatePlayers();
+        renderInputs();
+        renderResults();
+      },
       onToggle: (degree) => {
-        addOrToggle(arohanaSel, degree);
+        if (!addOrToggle(arohanaSel, degree)) return;
         restartSeparatePlayers();
         renderInputs();
         renderResults();
@@ -201,8 +402,15 @@ function renderInputs() {
       labelPrefs,
       order: orderMapFor(avarohanaSel),
       descending: true,
+      labelOffset: transposeState.avarohana.offset,
+      onReplace: (newList) => {
+        replaceList(avarohanaSel, newList);
+        restartSeparatePlayers();
+        renderInputs();
+        renderResults();
+      },
       onToggle: (degree) => {
-        addOrToggle(avarohanaSel, degree);
+        if (!addOrToggle(avarohanaSel, degree)) return;
         restartSeparatePlayers();
         renderInputs();
         renderResults();
@@ -229,6 +437,35 @@ function renderInputs() {
   }
 }
 
+function hasSelection() {
+  return layoutMode === "combined" ? combined.length > 0 : arohanaSel.length > 0 || avarohanaSel.length > 0;
+}
+
+// The one place the current selection is turned into results, whichever of
+// the four (order mode x layout mode) shapes it currently has. Shared by
+// the results list and by the wheel's centre summary, so the two can't
+// drift into disagreeing about what's matching right now.
+function currentMatches() {
+  if (orderMode) {
+    return layoutMode === "combined" ? matchOrdered(ragas, combined, "either") : matchOrderedSeparate(ragas, arohanaSel, avarohanaSel);
+  }
+  return layoutMode === "combined" ? match(ragas, new Set(combined)) : matchSeparate(ragas, new Set(arohanaSel), new Set(avarohanaSel));
+}
+
+// One line of live result summary for the hole in the middle of the swara
+// wheel (see specs/03-swara-wheel.md): the top exact match's name and the
+// two counts, with a way to hear that raga. Other input styles ignore it.
+function selectionSummary() {
+  if (!hasSelection()) return { text: "Pick some swaras", onPlay: null };
+  const { exact, contains } = currentMatches();
+  const counts = `${exact.length} exact · ${contains.length} contain`;
+  const top = exact[0] ?? null;
+  return {
+    text: top ? `${top.name} · ${counts}` : `No exact match · ${counts}`,
+    onPlay: top ? () => playScaleOnce(top) : null,
+  };
+}
+
 function renderResults() {
   // Every result row's preview player is torn down and rebuilt fresh below,
   // so a still-running one from before this render would otherwise become
@@ -241,15 +478,14 @@ function renderResults() {
     return;
   }
 
-  const hasSelection = layoutMode === "combined" ? combined.length > 0 : arohanaSel.length > 0 || avarohanaSel.length > 0;
-  if (!hasSelection) {
+  if (!hasSelection()) {
+    promptEl.textContent = EMPTY_PROMPT;
     promptEl.hidden = false;
     return;
   }
   promptEl.hidden = true;
 
-  const { exact, contains } =
-    layoutMode === "combined" ? match(ragas, new Set(combined)) : matchSeparate(ragas, new Set(arohanaSel), new Set(avarohanaSel));
+  const { exact, contains } = currentMatches();
 
   const matched = currentMatchedSets();
   for (const raga of exact) resultsEl.appendChild(renderRow(raga, "exact", matched));
@@ -261,15 +497,14 @@ function renderResults() {
 }
 
 function renderOrderedResults() {
-  const hasSelection = layoutMode === "combined" ? combined.length > 0 : arohanaSel.length > 0 || avarohanaSel.length > 0;
-  if (!hasSelection) {
+  if (!hasSelection()) {
+    promptEl.textContent = EMPTY_PROMPT;
     promptEl.hidden = false;
     return;
   }
   promptEl.hidden = true;
 
-  const { exact, contains } =
-    layoutMode === "combined" ? matchOrdered(ragas, combined, "either") : matchOrderedSeparate(ragas, arohanaSel, avarohanaSel);
+  const { exact, contains } = currentMatches();
 
   if (exact.length === 0 && contains.length === 0) {
     resultsEl.appendChild(emptyRow("No ragas match this note order, even partially."));
@@ -349,6 +584,7 @@ function renderRow(raga, badgeText, matched, tint = Boolean(badgeText)) {
     buttonEls: playBtn,
     getLoop: () => false,
     onStart: () => {
+      stopScalePreview();
       if (activeRowPlayer && activeRowPlayer !== rowPlayer) activeRowPlayer.stop();
       activeRowPlayer = rowPlayer;
       combinedPlayer.stop();
@@ -360,6 +596,14 @@ function renderRow(raga, badgeText, matched, tint = Boolean(badgeText)) {
   const name = document.createElement("span");
   name.className = "raga-name";
   name.textContent = raga.name;
+  // Every result list puts melakartas first (see byMelakartaThenName in
+  // ragas.js). The order alone doesn't say why, so each one says so.
+  if (raga.is_melakarta) {
+    const melaBadge = document.createElement("span");
+    melaBadge.className = "badge badge-mela";
+    melaBadge.textContent = "melakarta";
+    name.appendChild(melaBadge);
+  }
   if (badgeText) {
     const badge = document.createElement("span");
     badge.className = "badge";
@@ -369,7 +613,7 @@ function renderRow(raga, badgeText, matched, tint = Boolean(badgeText)) {
 
   const mela = document.createElement("span");
   mela.className = "mela-context";
-  mela.textContent = melaContext(raga);
+  mela.textContent = melaContext(raga, melaNames);
 
   const scales = document.createElement("div");
   scales.className = "scales";
@@ -443,7 +687,7 @@ function performRagaSearch() {
   if (related.length > 0) {
     const heading = document.createElement("li");
     heading.className = "search-related-heading";
-    heading.textContent = `Related ragas - same parent scale as ${top.name} (${melaContext(top)})`;
+    heading.textContent = `Related ragas - same parent scale as ${top.name} (${melaContext(top, melaNames)})`;
     searchResultsEl.appendChild(heading);
     for (const raga of related) {
       searchResultsEl.appendChild(renderRow(raga, null, empty, false));
@@ -457,9 +701,7 @@ ragaSearchInput.addEventListener("input", performRagaSearch);
 // switching layout mode or muting does - two views' worth of Play buttons
 // left running into each other would be confusing, not useful.
 function openSearchView() {
-  combinedPlayer.stop();
-  stopAllSeparatePlayers();
-  stopActiveRowPreview();
+  stopAllPlayback();
   mainView.hidden = true;
   searchView.hidden = false;
   ragaSearchInput.focus();
@@ -649,7 +891,7 @@ avarohanaSoloPlayer = makePlayer({
 // both direction buttons together (same Play/Stop state, since either one
 // starts/stops this same single sequence rather than its own). Loops on
 // Arohana's own Loop toggle only - Avarohana's Play/Loop group is hidden
-// entirely while joined (see updateControlVisibility()), so its Loop
+// disabled while joined (see updateControlAvailability()), so its Loop
 // checkbox isn't a visible control at that point and reading it would risk
 // a stale/hidden checked state silently overriding the one Loop toggle the
 // user can actually see and use.
@@ -675,6 +917,22 @@ function stopAllSeparatePlayers() {
   jointPlayer.stop();
 }
 
+// Everything that can be making sound, at once. Used wherever a control
+// changes *which* Play/Loop controls are in charge, rather than merely
+// editing what they'd play: switching layout mode hands over from the
+// combined block's Play to Arohana/Avarohana's (or back), switching input
+// style swaps out the widget a sequence was started from, and toggling
+// "Record note order" or "Free play" changes what Play even means. In every
+// one of those cases a still-running player is driving a button the user can
+// no longer see - a looped Arohana that kept going after a switch to
+// Combined had no visible Stop at all, and the Combined Play button showed
+// "Play" while sound was coming out.
+function stopAllPlayback() {
+  combinedPlayer.stop();
+  stopAllSeparatePlayers();
+  stopActiveRowPreview(); // also covers the wheel's centre-summary preview
+}
+
 function restartSeparatePlayers() {
   restartIfPlaying(arohanaSoloPlayer);
   restartIfPlaying(avarohanaSoloPlayer);
@@ -697,36 +955,74 @@ playBothToggle.addEventListener("change", () => {
 let activeRowPlayer = null;
 
 function stopActiveRowPreview() {
+  stopScalePreview();
   if (activeRowPlayer) {
     activeRowPlayer.stop();
     activeRowPlayer = null;
   }
 }
 
+// The swara wheel's centre summary doubles as a play button for the top
+// match. It can't use makePlayer: that binds Play/Stop state to a button
+// element, and this one is destroyed and rebuilt on every renderInputs() -
+// so instead it's a plain one-shot pass over the raga's own scale, arohana
+// then avarohana with the usual turnaround pause, cancelled by token the
+// same way makePlayer cancels its own timer chain. Folded into
+// stopActiveRowPreview above so every existing "stop whatever's playing"
+// call site already covers it.
+let scalePreviewToken = 0;
+
+function stopScalePreview() {
+  scalePreviewToken++;
+}
+
+function playScaleOnce(raga) {
+  stopActiveRowPreview();
+  combinedPlayer.stop();
+  stopAllSeparatePlayers();
+
+  const arohanaDegrees = raga.arohana.map((n) => n.degree);
+  const sequence = [...arohanaDegrees, ...raga.avarohana.map((n) => n.degree)];
+  const pauseAfterIndex = arohanaDegrees.length - 1;
+  const myToken = ++scalePreviewToken;
+  let i = 0;
+
+  (function step() {
+    if (myToken !== scalePreviewToken || i >= sequence.length) return;
+    playPianoTone(sequence[i]);
+    const atTurnaround = i === pauseAfterIndex;
+    i++;
+    setTimeout(step, atTurnaround ? LOOP_END_DELAY_MS : NOTE_GAP_MS);
+  })();
+}
+
 resetBtn.addEventListener("click", () => {
   combinedPlayer.stop();
   combined.length = 0;
+  // The baseline went with the notes - there's nothing left to be
+  // transposed *from*.
+  transposeState.combined = { steps: 0, offset: 0 };
   renderInputs();
   renderResults();
 });
 arohanaResetBtn.addEventListener("click", () => {
   stopAllSeparatePlayers();
   arohanaSel.length = 0;
+  transposeState.arohana = { steps: 0, offset: 0 };
   renderInputs();
   renderResults();
 });
 avarohanaResetBtn.addEventListener("click", () => {
   stopAllSeparatePlayers();
   avarohanaSel.length = 0;
+  transposeState.avarohana = { steps: 0, offset: 0 };
   renderInputs();
   renderResults();
 });
 
 // --- Mute ---------------------------------------------------------------
-// A single block (title + reset + widget) per mode is shown/hidden as one
-// unit by layoutMode (see updateLayoutVisibility) - mute only ever needs to
-// touch the play/loop sub-controls within whichever block(s) are current,
-// never the reset buttons or the block visibility itself.
+// Mute only ever touches the play/loop sub-controls, never Clear and never
+// a block's visibility - silencing the app doesn't take the scale away.
 
 function renderMuteButton() {
   muteBtn.innerHTML = muted ? `${ICON_MUTED}<span>Unmute</span>` : `${ICON_UNMUTED}<span>Mute</span>`;
@@ -734,48 +1030,58 @@ function renderMuteButton() {
   muteBtn.classList.toggle("active", muted);
 }
 
-// Two independent reasons Avarohana's playback-controls can be hidden, and
-// they hide it two different ways on purpose:
-// - muted: collapses all three groups (`hidden` -> display:none) - nothing
-//   is playable regardless of layout, so there's no space worth reserving.
-// - "Play both" checked: Avarohana's controls go invisible *in place*
-//   (`.controls-invisible` -> visibility:hidden) rather than collapsing -
-//   the element keeps occupying exactly the layout space it would if shown
-//   (including whatever wrapped/unwrapped shape it'd have at the current
-//   viewport width), so Arohana's header - the only one still visibly
-//   showing Play/Loop - and Avarohana's stay the same height and the piano
-//   below never shifts when this toggle flips. Collapsing it instead (the
-//   original approach) shrank Avarohana's header and visibly moved its
-//   piano up every time "Play both" was checked.
+// Greys a control and takes it out of play without moving it. Everything in
+// the Controls panel and every per-block control goes through this: an
+// option that appears, disappears and reflows its neighbours as other
+// options change is far harder to learn than one that simply sits there
+// looking unavailable.
+function setControlEnabled(el, enabled) {
+  el.classList.toggle("control-disabled", !enabled);
+  for (const control of el.querySelectorAll("input, button")) control.disabled = !enabled;
+  if (el.matches("input, button")) el.disabled = !enabled;
+}
+
+function updateControlAvailability() {
+  const free = inFreePlayMode();
+  const separate = layoutMode === "separate" && !free;
+
+  // Free play is Piano-only: Buttons and the Wheel have no "just sound the
+  // note" reading - a Buttons tap is a selection and nothing else, and the
+  // Wheel's sweep is inherently about building a scale.
+  setControlEnabled(freePlayLabel, inputStyle === "piano");
+  // While free play is on there is no scale being built, so everything that
+  // shapes one steps back rather than stepping out.
+  setControlEnabled(layoutGroup, !free);
+  setControlEnabled(orderModeLabel, !free);
+  setControlEnabled(playBothLabel, separate && !muted);
+  setControlEnabled(transposeBothLabel, separate);
+
+  setControlEnabled(combinedControls, !muted && !free);
+  setControlEnabled(arohanaControls, !muted && !free);
+  // Avarohana's Play/Loop is driven by Arohana's while "Play both" is on -
+  // its own buttons would be a second handle on the same single sequence.
+  setControlEnabled(avarohanaControls, !muted && !free && !playBothToggle.checked);
+  setControlEnabled(resetBtn, !free);
+  setControlEnabled(arohanaResetBtn, !free);
+  setControlEnabled(avarohanaResetBtn, !free);
+
+  renderTransposeRows();
+}
+
+// Kept as the single entry point every caller already uses: the free-play
+// dressing (a title, and a hook for the stylesheet) plus the availability
+// pass that does the real work.
 function updateControlVisibility() {
-  combinedControls.hidden = muted;
-  arohanaControls.hidden = muted;
-  avarohanaControls.hidden = muted;
-  avarohanaControls.classList.toggle("controls-invisible", !muted && playBothToggle.checked);
-  // playBothLabel only *collapses* (hidden -> display:none, freeing its
-  // space) when leaving separate mode, where it's genuinely irrelevant -
-  // never when merely muting. Muting instead goes invisible-in-place
-  // (.controls-invisible -> visibility:hidden, same trick as Avarohana's
-  // controls above), so #note-order-group's width - and therefore whether
-  // it still fits next to Mute on one line - never changes just because
-  // mute was toggled. A real bug this fixes: collapsing on mute shrank the
-  // group, which changed the row's total width enough to flip its wrap
-  // state - Record note order visibly jumped up onto Mute's own line when
-  // muted and back down when unmuted, in separate mode.
-  const inSeparateMode = layoutMode === "separate";
-  playBothLabel.hidden = !inSeparateMode;
-  playBothLabel.classList.toggle("controls-invisible", inSeparateMode && muted);
+  document.body.classList.toggle("free-play-mode", inFreePlayMode());
+  combinedTitle.textContent = inFreePlayMode() ? "Piano" : "Scale";
+  updateControlAvailability();
 }
 
 function applyMuted() {
   setMuted(muted);
   updateControlVisibility();
   renderMuteButton();
-  if (muted) {
-    combinedPlayer.stop();
-    stopAllSeparatePlayers();
-    stopActiveRowPreview();
-  }
+  if (muted) stopAllPlayback();
 }
 
 muteBtn.addEventListener("click", () => {
@@ -788,21 +1094,65 @@ muteBtn.addEventListener("click", () => {
 document.querySelectorAll('input[name="input-style"]').forEach((radio) => {
   radio.addEventListener("change", (e) => {
     if (e.target.checked) {
+      stopAllPlayback();
       inputStyle = e.target.value;
+      updateLayoutVisibility(); // free play is Piano-only, and it owns the layout while on
       renderInputs();
+      renderResults(); // the empty-state prompt names the current style
     }
   });
 });
 
+// The one thing that genuinely swaps rather than greys: you can't show the
+// combined widget and the two direction widgets at once. Free play pins it to
+// the combined block - it's one keyboard, not a scale being assembled in two
+// directions - while leaving the Layout radio's own value alone, so leaving
+// free play returns to whichever layout was in use.
 function updateLayoutVisibility() {
-  combinedBlock.hidden = layoutMode !== "combined";
-  separateContainer.hidden = layoutMode !== "separate";
-  updateControlVisibility(); // playBothLabel's own visibility also depends on layoutMode
+  const free = inFreePlayMode();
+  combinedBlock.hidden = !free && layoutMode !== "combined";
+  separateContainer.hidden = free || layoutMode !== "separate";
+  updateControlVisibility();
+}
+
+// Switching layout carries the work across instead of stranding it in the
+// widget you just left.
+//
+// Combined -> Separate: what you'd assembled becomes the Arohana, and
+// Avarohana starts empty. It can't sensibly be both directions at once - a
+// combined selection says "this raga uses these notes", with no claim about
+// which way - and seeding Avarohana with the same set would silently assert
+// a symmetry the user never stated. Empty is unconstrained, which is the
+// honest starting point (see matchSeparate).
+//
+// Separate -> Combined: both directions merge, which is exactly what the
+// combined view means. Deduplicated normally; in order mode the two
+// recorded sequences are concatenated as-is, ascending phrase then
+// descending, since deduplicating there would destroy the very thing being
+// recorded.
+//
+// The transpose memory travels with the notes. Combined -> Separate is a
+// single source, so Arohana inherits it exactly and its Piano shows the
+// identical picture Combined just did; the merge takes Arohana's, the
+// direction whose notes lead the merged list.
+function inheritSelection(from, to) {
+  if (from === "combined" && to === "separate") {
+    replaceList(arohanaSel, [...combined]);
+    avarohanaSel.length = 0;
+    transposeState.arohana = { ...transposeState.combined };
+    transposeState.avarohana = { steps: 0, offset: 0 };
+  } else if (from === "separate" && to === "combined") {
+    const merged = [...arohanaSel, ...avarohanaSel];
+    replaceList(combined, orderMode ? merged : [...new Set(merged)]);
+    transposeState.combined = { ...transposeState.arohana };
+  }
 }
 
 document.querySelectorAll('input[name="layout-mode"]').forEach((radio) => {
   radio.addEventListener("change", (e) => {
     if (e.target.checked) {
+      stopAllPlayback();
+      if (e.target.value !== layoutMode) inheritSelection(layoutMode, e.target.value);
       layoutMode = e.target.value;
       updateLayoutVisibility();
       renderInputs();
@@ -811,8 +1161,25 @@ document.querySelectorAll('input[name="layout-mode"]').forEach((radio) => {
   });
 });
 
+transposeBothToggle.addEventListener("change", () => {
+  transposeBoth = transposeBothToggle.checked;
+  updateControlAvailability();
+});
+
 orderModeToggle.addEventListener("change", () => {
+  // Order mode changes what Play plays - the recorded click order rather
+  // than the selection sorted - so a sequence already running would be
+  // finishing out something the controls no longer describe.
+  stopAllPlayback();
   orderMode = orderModeToggle.checked;
+  renderInputs();
+  renderResults();
+});
+
+freePlayToggle.addEventListener("change", () => {
+  stopAllPlayback();
+  freePlay = freePlayToggle.checked;
+  updateLayoutVisibility();
   renderInputs();
   renderResults();
 });
@@ -913,10 +1280,11 @@ async function init() {
   initTheme();
   buildReferenceTable();
   renderMuteButton();
-  updateLayoutVisibility(); // also runs updateControlVisibility() - Play both defaults checked
+  updateLayoutVisibility(); // also runs updateControlAvailability() - Play both defaults checked
   renderInputs();
   try {
     ragas = await loadRagas();
+    melaNames = melakartaNames(ragas);
   } catch (err) {
     promptEl.textContent = `Failed to load raga data: ${err.message}`;
     promptEl.hidden = false;

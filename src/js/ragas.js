@@ -25,6 +25,16 @@ export function noteSet(raga) {
   return combined;
 }
 
+// Result ordering, used by every list in the app. Melakartas come first,
+// then alphabetical within each group: a parent scale is the answer most
+// searches are really reaching for, and burying it among its own janyas
+// (which are far more numerous, and often alphabetically earlier) made it
+// the hardest row to find. Rows carry a "melakarta" badge too - the order
+// alone doesn't say why something is on top. See renderRow in app.js.
+function byMelakartaThenName(a, b) {
+  return Number(Boolean(b.is_melakarta)) - Number(Boolean(a.is_melakarta)) || a.name.localeCompare(b.name);
+}
+
 function isSuperset(set, subset) {
   for (const x of subset) {
     if (!set.has(x)) return false;
@@ -41,7 +51,7 @@ function setsEqual(a, b) {
 }
 
 // Given the full raga list and a Set of pressed degrees (0-12), return
-// { exact, contains }, each sorted alphabetically by name. Empty `pressed`
+// { exact, contains }, each ordered by byMelakartaThenName. Empty `pressed`
 // yields no results - see spec's "prompt state" UI rule.
 export function match(ragas, pressed) {
   if (pressed.size === 0) return { exact: [], contains: [] };
@@ -57,9 +67,8 @@ export function match(ragas, pressed) {
     }
   }
 
-  const byName = (a, b) => a.name.localeCompare(b.name);
-  exact.sort(byName);
-  contains.sort(byName);
+  exact.sort(byMelakartaThenName);
+  contains.sort(byMelakartaThenName);
   return { exact, contains };
 }
 
@@ -93,9 +102,8 @@ export function matchSeparate(ragas, pressedArohana, pressedAvarohana) {
     else contains.push(raga);
   }
 
-  const byName = (a, b) => a.name.localeCompare(b.name);
-  exact.sort(byName);
-  contains.sort(byName);
+  exact.sort(byMelakartaThenName);
+  contains.sort(byMelakartaThenName);
   return { exact, contains };
 }
 
@@ -148,9 +156,8 @@ export function matchOrdered(ragas, sequence, direction = "either") {
     (aroExact || avaExact ? exact : contains).push(annotated);
   }
 
-  const byName = (a, b) => a.name.localeCompare(b.name);
-  exact.sort(byName);
-  contains.sort(byName);
+  exact.sort(byMelakartaThenName);
+  contains.sort(byMelakartaThenName);
   return { exact, contains };
 }
 
@@ -183,15 +190,91 @@ export function matchOrderedSeparate(ragas, aroSequence, avaSequence) {
     (aroExact && avaExact ? exact : contains).push(annotated);
   }
 
-  const byName = (a, b) => a.name.localeCompare(b.name);
-  exact.sort(byName);
-  contains.sort(byName);
+  exact.sort(byMelakartaThenName);
+  contains.sort(byMelakartaThenName);
   return { exact, contains };
 }
 
-export function melaContext(raga) {
+// --- Transpose / graha bhedam -------------------------------------------
+// Keep the same physical pitches, treat a *different* selected note as Sa.
+// Surfaced in the UI as each block's Transpose row.
+//
+// Two functions rather than the single rotateGraha(list, direction) that
+// specs/03 sketched: "Transpose both Arohana & Avarohana" has to move a
+// *second* list by the tonic taken from the first, so choosing the tonic and
+// applying it are separate steps. Choosing one per list independently would
+// shift the two directions by different intervals and silently pull one raga
+// into two.
+//
+// Which selected note `direction` would hand the tonic to, as a pitch class,
+// or null when there isn't one. `direction` >= 0 takes the next selected note
+// upward, < 0 the previous one - it snaps to notes that are actually selected
+// rather than stepping by an arbitrary semitone, since a free +/-1 rotation
+// produces sets that often don't contain Sa at all, which is not a scale and
+// not what graha bhedam means.
+export function grahaTonic(list, direction = 1) {
+  // Pitch classes: degrees 0 and 12 are the same swara an octave apart, so
+  // they're one candidate tonic, not two. 0 is where the tonic already is,
+  // so it's never a rotation *target*.
+  const candidates = [...new Set(list.map((d) => d % 12))].sort((a, b) => a - b).filter((pc) => pc !== 0);
+  if (candidates.length === 0) return null; // nothing but Sa - no other note to hand the tonic to
+  return direction >= 0 ? candidates[0] : candidates[candidates.length - 1];
+}
+
+// The shift itself, at an explicit tonic. A list that doesn't contain that
+// pitch class still moves by the same interval - that's the point when both
+// directions are being transposed together, and it means the result won't
+// start on Sa unless the tonic was in it.
+//
+// Worked examples (verified against data/ragas.json): Mohanam 0 2 4 7 9 12
+// with 2 as the new Sa gives Madhyamavathi; with 4, Hindolam.
+//
+// `ordered` distinguishes the two things a selection can be. Off (the
+// default): a *set* of notes, so the result is deduplicated, sorted, and
+// gets its octave bookend re-attached - if the input reached up to degree
+// 12, so does the output. On: a recorded *sequence*, so every element is
+// mapped where it stands and order and repeats survive untouched.
+export function rotateToTonic(list, tonic, { ordered = false } = {}) {
+  if (list.length === 0) return [];
+  const shift = (degree) => (((degree % 12) - tonic + 12) % 12);
+
+  if (ordered) {
+    // An upper Sa stays the upper Sa only while it's still Sa; once the
+    // rotation moves it off the tonic, the octave it was marking is gone
+    // and it lands in the base octave with everything else.
+    return list.map((degree) => {
+      const rotated = shift(degree);
+      return degree === 12 && rotated === 0 ? 12 : rotated;
+    });
+  }
+
+  const rotated = [...new Set(list.map(shift))].sort((a, b) => a - b);
+  if (list.includes(12)) rotated.push(12);
+  return rotated;
+}
+
+// Mela number -> that melakarta's own name, built once from the dataset
+// rather than stored anywhere: the 72 parent scales are already in
+// ragas.json as ordinary ragas with is_melakarta set, so there is nothing
+// to hand-author or keep in sync.
+export function melakartaNames(ragas) {
+  const names = new Map();
+  for (const raga of ragas) {
+    if (raga.is_melakarta && raga.mela != null && !names.has(raga.mela)) names.set(raga.mela, raga.name);
+  }
+  return names;
+}
+
+// `melaNames` (from melakartaNames above) is optional - without it this
+// degrades to the bare number. A janya gets its parent's name spelled out,
+// since "Janya of mela 28" only means something if you already know the 72
+// by number; a melakarta doesn't, because there the name would just repeat
+// the row's own title.
+export function melaContext(raga, melaNames) {
   if (raga.mela == null) return "Mela unknown";
-  return raga.is_melakarta ? `Melakarta #${raga.mela}` : `Janya of mela ${raga.mela}`;
+  if (raga.is_melakarta) return `Melakarta #${raga.mela}`;
+  const parent = melaNames?.get(raga.mela);
+  return parent ? `Janya of mela ${raga.mela} (${parent})` : `Janya of mela ${raga.mela}`;
 }
 
 // Free-text raga-name search, ranked by closeness: 0 = exact (case-
@@ -215,7 +298,10 @@ export function searchByName(ragas, query) {
     tiered.push({ raga, tier });
   }
 
-  tiered.sort((a, b) => a.tier - b.tier || a.raga.name.localeCompare(b.raga.name));
+  // Tier still wins: what you literally typed stays on top, whether or not
+  // it's a melakarta. Within a tier, the same melakarta-first rule the
+  // note-based results use.
+  tiered.sort((a, b) => a.tier - b.tier || byMelakartaThenName(a.raga, b.raga));
   return tiered.map((t) => t.raga);
 }
 
@@ -233,6 +319,8 @@ export function relatedByMela(ragas, raga, exclude = []) {
   const excludedIds = new Set(exclude.map((r) => r.id));
   excludedIds.add(raga.id);
   const related = ragas.filter((r) => r.mela === raga.mela && !excludedIds.has(r.id));
-  related.sort((a, b) => a.name.localeCompare(b.name));
+  // Puts the parent melakarta itself at the head of its own family, which
+  // is exactly the row someone browsing "related ragas" wants first.
+  related.sort(byMelakartaThenName);
   return related;
 }

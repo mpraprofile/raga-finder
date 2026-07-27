@@ -64,3 +64,36 @@ export function playPianoTone(degree) {
     osc.stop(now + duration + 0.05);
   }
 }
+
+// A short, deliberately unmusical "blocked" sound - two quick low-pitched
+// square-wave blips, clearly distinct from the piano tone - for actions
+// that get refused rather than performed (currently: Piano's per-note
+// order-mode repeat cap, see app.js's addOrToggle). Fixed pitch, not
+// derived from SA_HZ/a degree, since it isn't representing a note.
+const BLOCKER_HZ = 180;
+const BLOCKER_BLIP_DURATION = 0.07;
+const BLOCKER_BLIP_GAP = 0.09;
+
+export function playBlockerSound() {
+  if (muted) return;
+
+  const audioCtx = getContext();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+
+  const now = audioCtx.currentTime;
+  [0, 1].forEach((i) => {
+    const start = now + i * BLOCKER_BLIP_GAP;
+    const osc = audioCtx.createOscillator();
+    osc.type = "square";
+    osc.frequency.value = BLOCKER_HZ;
+
+    const env = audioCtx.createGain();
+    env.gain.setValueAtTime(0.15, start);
+    env.gain.exponentialRampToValueAtTime(0.0001, start + BLOCKER_BLIP_DURATION);
+
+    osc.connect(env);
+    env.connect(audioCtx.destination);
+    osc.start(start);
+    osc.stop(start + BLOCKER_BLIP_DURATION + 0.02);
+  });
+}
