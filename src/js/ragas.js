@@ -195,7 +195,7 @@ export function matchOrderedSeparate(ragas, aroSequence, avaSequence) {
   return { exact, contains };
 }
 
-// --- Transpose / graha bhedam -------------------------------------------
+// --- Transpose / graha bhēdam -------------------------------------------
 // Keep the same physical pitches, treat a *different* selected note as Sa.
 // Surfaced in the UI as each block's Transpose row.
 //
@@ -211,7 +211,7 @@ export function matchOrderedSeparate(ragas, aroSequence, avaSequence) {
 // upward, < 0 the previous one - it snaps to notes that are actually selected
 // rather than stepping by an arbitrary semitone, since a free +/-1 rotation
 // produces sets that often don't contain Sa at all, which is not a scale and
-// not what graha bhedam means.
+// not what graha bhēdam means.
 export function grahaTonic(list, direction = 1) {
   // Pitch classes: degrees 0 and 12 are the same swara an octave apart, so
   // they're one candidate tonic, not two. 0 is where the tonic already is,
@@ -277,32 +277,256 @@ export function melaContext(raga, melaNames) {
   return parent ? `Janya of mela ${raga.mela} (${parent})` : `Janya of mela ${raga.mela}`;
 }
 
-// Free-text raga-name search, ranked by closeness: 0 = exact (case-
-// insensitive) match, 1 = name starts with the query, 2 = query appears
-// anywhere else in the name. Ties within a tier break alphabetically.
-// Names that don't match at all are excluded entirely (not a "tier 3"),
-// and a blank query returns no results - there's nothing to search for
-// yet, same "empty prompt state" rule the note-based finder uses.
-export function searchByName(ragas, query) {
-  const q = query.trim().toLowerCase();
-  if (!q) return [];
+// --- Free-text raga-name search ------------------------------------------
+// A name search is nearly always reaching for a half-remembered spelling,
+// so exact substring matching was the wrong bar: "Moga" has to find Mohanam
+// and "Hansid" has to find the Hamsa- family. Two independent mechanisms,
+// applied in that order:
+//
+// 1. **Normalisation** (searchKey) folds away the transliteration choices
+//    that make two spellings of the same name look unrelated to a computer -
+//    Thodi/Todi, Hamsadhwani/Hamsadvani, Poornachandrika/Purnachandrika.
+//    Both sides get folded, so even the "literal" tiers below are judged on
+//    the folded forms, never the raw ones.
+// 2. **Approximate prefix matching** (approxPrefix) over what's left, for
+//    the errors no amount of folding can normalise away - a wrong letter, a
+//    dropped one, a transposed pair.
+//
+// Everything stays ranked in tiers rather than merged into one score: an
+// exact hit must never be pushed below a guess, however good the guess is.
 
-  const tiered = [];
-  for (const raga of ragas) {
-    const name = raga.name.toLowerCase();
-    let tier;
-    if (name === q) tier = 0;
-    else if (name.startsWith(q)) tier = 1;
-    else if (name.includes(q)) tier = 2;
-    else continue;
-    tiered.push({ raga, tier });
+const COMBINING_MARKS = /[\u0300-\u036f]/g;
+// Editorial furniture that rides along in a few source names and is no part
+// of the name itself: "Bibhas {Hindustani}", "Mukthipradayini [4]",
+// "Mahati cf. Mela 28&43".
+const ANNOTATIONS = /\{[^}]*\}|\[[^\]]*\]|\([^)]*\)|\bcf\..*$/g;
+
+// The comparison form of a name (or of a query). Folded, in order:
+// annotations dropped; diacritics and stroked letters flattened (the dataset
+// has one "Poornashađjam"); w -> v; aspirated consonants de-aspirated, which
+// also collapses sh -> s (Thodi/Todi, Bhairavi/Bairavi, Shankara/Sankara);
+// doubled vowels to the short vowel they stand in for (Sree/Sri,
+// Poorna/Purna, Deepika/Dipika); every run of non-letters to a single space,
+// so a slash-separated alternate name ("Malkosh / Malkauns") simply becomes a
+// second word and is found by the word-start tier below with no special
+// casing; word-final y to i (Abhery/Abheri); finally any doubled letter to a
+// single one (Kalyaani -> Kalyani).
+//
+// Aggressive on purpose. The cost of over-folding is a few extra rows in a
+// low tier; the cost of under-folding is a name the user can spell aloud but
+// cannot find.
+export function searchKey(text) {
+  return text
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(COMBINING_MARKS, "")
+    .replace(/&amp;/g, "&")
+    .replace(ANNOTATIONS, " ")
+    .replace(/[đð]/g, "d")
+    .replace(/w/g, "v")
+    .replace(/([bcdgjkpstz])h/g, "$1")
+    .replace(/ee/g, "i")
+    .replace(/oo/g, "u")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .replace(/y(?= |$)/g, "i")
+    .replace(/([a-z0-9])\1+/g, "$1");
+}
+
+// Offsets in `key` where a word begins - 0 plus every position after a
+// space. What lets "kalyani" find "Mohana Kalyani" and "malkauns" find
+// "Malkosh / Malkauns".
+function wordStarts(key) {
+  const starts = [0];
+  for (let i = 0; i < key.length; i++) {
+    if (key[i] === " ") starts.push(i + 1);
+  }
+  return starts;
+}
+
+// Normalising 973 names on every keystroke would be wasteful, so it happens
+// once after load and the result is what searchByName() searches. Built in
+// dataset order, and each entry keeps its raga, so ranking can still fall
+// back on the usual melakarta-first ordering.
+export function buildNameIndex(ragas) {
+  return ragas.map((raga) => {
+    const key = searchKey(raga.name);
+    return { raga, key, starts: wordStarts(key) };
+  });
+}
+
+const TIER_EXACT = 0;
+const TIER_PREFIX = 1;
+const TIER_WORD_PREFIX = 2;
+const TIER_SUBSTRING = 3;
+const TIER_FUZZY_START = 4;
+const TIER_FUZZY_WORD = 5;
+
+// The only permitted starting offset for a fuzzy match against the name as a
+// whole - see approxPrefix.
+const NAME_START = [0];
+
+// How many single-character edits a query prefix of `len` characters is
+// allowed to be wrong by. Stingy at the short end deliberately: one edit in
+// three characters matches almost anything, so under four characters nothing
+// fuzzy is entertained at all and the literal tiers do all the work.
+function fuzzyBudget(len) {
+  if (len < 4) return 0;
+  if (len < 6) return 1;
+  if (len < 9) return 2;
+  return 3;
+}
+
+// Levenshtein with the *trailing* text free - so a query is matched against
+// every prefix of the name at once - and starting only at one of `starts`
+// (offsets in `text`; `[0]` means the name's own beginning, the full
+// wordStarts() list means any word in it).
+//
+// Never truly unanchored. Allowing a match to begin mid-word was tried and
+// was the single largest source of nonsense: with a four-character window
+// free to land anywhere, "nata" reached 205 rows (Kanakadri, Sajjananandhi)
+// and "kharahara" 251 (Swayambhooshwara Raga). Every one of those was
+// junk, and no real query lost anything by requiring a word boundary -
+// a genuine mid-word hit is nearly always a literal substring anyway, which
+// an earlier tier has already caught.
+//
+// The row minimum after query character `i` is the best distance for the
+// query's own first `i` characters, so one pass answers for every query
+// prefix - which is the whole trick behind partial tolerance: "Hansid"
+// stops being matchable around its 5th character for most of the Hamsa
+// family, but its first four still are, and that's reported rather than
+// discarded. Those per-prefix distances are also summed into `area`, which
+// is what separates two guesses that end up equally wrong overall: "Hansid"
+// is two edits from both "Hamsadhwani" and "Haridarpa", but it stays right
+// for four characters against the first and only two against the second, and
+// the smaller area says so.
+//
+// Returns the longest prefix that stayed inside budget as
+// `{ consumed, distance, area }`, or null if even the first few characters
+// didn't.
+function approxPrefix(text, query, starts) {
+  const n = text.length;
+  let prev = new Array(n + 1);
+  let cur = new Array(n + 1);
+  // Row 0: the cost of reaching column j having consumed no query characters
+  // yet - zero at a permitted starting offset, and otherwise the number of
+  // characters deleted since the nearest one before it.
+  const startSet = new Set(starts);
+  let base = 0;
+  for (let j = 0; j <= n; j++) {
+    if (startSet.has(j)) base = j;
+    prev[j] = j - base;
   }
 
-  // Tier still wins: what you literally typed stays on top, whether or not
-  // it's a melakarta. Within a tier, the same melakarta-first rule the
-  // note-based results use.
-  tiered.sort((a, b) => a.tier - b.tier || byMelakartaThenName(a.raga, b.raga));
-  return tiered.map((t) => t.raga);
+  let best = null;
+  let area = 0;
+  for (let i = 1; i <= query.length; i++) {
+    const qc = query[i - 1];
+    cur[0] = i;
+    let rowMin = i;
+    for (let j = 1; j <= n; j++) {
+      let v = prev[j - 1] + (qc === text[j - 1] ? 0 : 1);
+      if (prev[j] + 1 < v) v = prev[j] + 1;
+      if (cur[j - 1] + 1 < v) v = cur[j - 1] + 1;
+      cur[j] = v;
+      if (v < rowMin) rowMin = v;
+    }
+    area += rowMin;
+    if (rowMin <= fuzzyBudget(i)) best = { consumed: i, distance: rowMin, area };
+    const spare = prev;
+    prev = cur;
+    cur = spare;
+  }
+  return best;
+}
+
+// A fuzzy hit also has to account for enough of what was actually typed:
+// four characters minimum, and 70% of the query once it's longer than six.
+// Without this, one recognisable syllable would drag in half the dataset on
+// a long query - the whole of "kharahara" is a much stronger statement of
+// intent than the whole of "nata", and the floor has to rise with it.
+function minConsumed(len) {
+  return Math.max(4, Math.ceil(len * 0.7));
+}
+
+// How many leading characters the two agree on outright. Two guesses can be
+// one edit away from the query and still not be equally good guesses:
+// "Moga" is a single substitution from both Mohanam and Bhogavasantha (once
+// folded, "boga"), and the one that starts the way you started typing is
+// obviously the one you meant.
+function sharedPrefix(key, q) {
+  let i = 0;
+  while (i < key.length && i < q.length && key[i] === q[i]) i++;
+  return i;
+}
+
+// null when this name isn't a match at all - not a lowest tier. Tiers 0-3
+// are literal (on the folded forms); 4 and 5 are guesses, and are the only
+// ones where the numbers below carry information - a literal tier leaves
+// them all zero so its rows keep falling through to the app's usual
+// melakarta-first alphabetical order, unchanged.
+function scoreName(entry, q) {
+  const { key, starts } = entry;
+  const literal = { consumed: 0, distance: 0, area: 0, shared: 0, gap: 0 };
+  if (key === q) return { tier: TIER_EXACT, ...literal };
+  if (key.startsWith(q)) return { tier: TIER_PREFIX, ...literal };
+  for (let i = 1; i < starts.length; i++) {
+    if (key.startsWith(q, starts[i])) return { tier: TIER_WORD_PREFIX, ...literal };
+  }
+  if (key.includes(q)) return { tier: TIER_SUBSTRING, ...literal };
+
+  const floor = minConsumed(q.length);
+  const guess = { shared: sharedPrefix(key, q), gap: Math.abs(key.length - q.length) };
+  const fromStart = approxPrefix(key, q, NAME_START);
+  if (fromStart && fromStart.consumed >= floor) return { tier: TIER_FUZZY_START, ...fromStart, ...guess };
+  // Single-word names have no other word to try - the pass above already was
+  // that pass.
+  if (starts.length === 1) return null;
+  const fromWord = approxPrefix(key, q, starts);
+  if (fromWord && fromWord.consumed >= floor) return { tier: TIER_FUZZY_WORD, ...fromWord, ...guess };
+  return null;
+}
+
+// Ranked name search over an index from buildNameIndex(). A blank query
+// returns no results - there's nothing to search for yet, the same "empty
+// prompt state" rule the note-based finder uses.
+export function searchByName(index, query) {
+  const q = searchKey(query);
+  if (!q) return [];
+
+  const scored = [];
+  for (const entry of index) {
+    const score = scoreName(entry, q);
+    if (score) scored.push({ ...score, raga: entry.raga });
+  }
+
+  // Tier wins outright: what you literally typed stays above anything
+  // merely close to it, melakarta or not. Then, for guesses only (a literal
+  // tier zeroes every one of these, so it goes straight to the last clause):
+  // how much of the query the match accounts for, how cleanly, how late the
+  // errors start, how much of it agrees outright, and how near the whole name
+  // is in length to what was typed - that last one is what puts Mohanam above
+  // Mohanadhwani for "Mohanm". Finally the same melakarta-first rule every
+  // other list in the app uses.
+  scored.sort(
+    (a, b) =>
+      a.tier - b.tier ||
+      b.consumed - a.consumed ||
+      a.distance - b.distance ||
+      a.area - b.area ||
+      b.shared - a.shared ||
+      a.gap - b.gap ||
+      byMelakartaThenName(a.raga, b.raga),
+  );
+  return scored.map((s) => s.raga);
+}
+
+// Whether `query` names `raga` outright, once both are folded - the search
+// view's "exact name" badge. Not `name === query`: the folding is the point,
+// so typing "Thodi" counts as naming Todi exactly.
+export function isExactNameMatch(raga, query) {
+  const q = searchKey(query);
+  return q.length > 0 && searchKey(raga.name) === q;
 }
 
 // Ragas sharing `raga`'s parent mela (the "same group of notes," per the

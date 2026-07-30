@@ -1,3 +1,26 @@
+/* Both faces are bundled subsets - nothing is fetched at runtime. See
+   fonts/README.md for what is in each subset and how to regenerate one.
+
+   `font-display: block` rather than swap, deliberately, and it costs nothing
+   because these are local files: a swap would repaint every swara label a
+   frame or two after load, and the labels are the one thing on the page whose
+   size the layout is tuned around to the pixel. */
+@font-face {
+  font-family: "Gentium Swara";
+  src: url("../fonts/gentium-book-plus-swara.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
+@font-face {
+  font-family: "Forum";
+  src: url("../fonts/forum-headings.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: block;
+}
+
 /* scrollbar-gutter reserves the vertical scrollbar's width up front,
    whether or not the page is currently tall enough to need one - without
    it, the very first note pressed (which reveals the results list, often
@@ -14,6 +37,24 @@
   --accent-soft: rgba(74, 125, 255, 0.08);
   --card-border: #8886;
   --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.07), 0 1px 2px rgba(0, 0, 0, 0.05);
+
+  /* The face swara labels are set in, everywhere they appear - keys, wheel
+     nodes, tray tiles, both reference annotations, the results list. One
+     variable so a label can never be set in one face in one widget and another
+     face somewhere else.
+
+     Gentium Book Plus, because the sthayi dots have to survive at 7-15px and
+     it draws them with roughly three times the ink of the system face (0.176
+     of the letter's own ink above, 0.099 below, against 0.064 / 0.046 - see
+     font-research.html). The marks stay real combining characters, so labels
+     are still copyable and searchable; the face was the only lever left.
+
+     Scoped to labels rather than applied page-wide: they are already their own
+     vocabulary, and a book serif across the buttons and toggles would be a
+     change of character nobody asked for. Georgia is the fallback because it
+     is the nearest thing to Gentium that ships everywhere, so a failed font
+     load degrades to a serif rather than to a sans. */
+  --font-swara: "Gentium Swara", Georgia, serif;
 }
 
 /* Theme selector (Light/Dark/System) - "System" is the default (no
@@ -57,15 +98,12 @@ body {
   color: canvastext;
 }
 
-/* "Forum" (Google Fonts) only ships a single 400 weight - loaded via a
-   <link> in index.html's <head>, so this falls back silently to the
-   default sans-serif stack if that request fails (e.g. offline; the app
-   itself still works fully offline, just without this one decorative
-   font - see specs/02-swara-keyboard-finder.md's "Data loading"). Weight
-   left at its normal 400 rather than bolted onto the old 700, since
-   browsers fake a bold weight Forum doesn't actually have by
-   distorting the glyphs (synthetic bold), which looks noticeably rougher
-   on a display serif face than on the plain sans-serif fallback. */
+/* Forum only ships a single 400 weight, so the weight stays at 400 rather than
+   the old 700: browsers fake a bold weight it doesn't have by distorting the
+   glyphs, which looks noticeably rougher on a display serif than on the plain
+   sans fallback. It is a bundled subset now (see the @font-face above), so the
+   old caveat about this one font quietly disappearing offline no longer
+   applies - it is precached like everything else. */
 h1 {
   font-family: "Forum", Georgia, serif;
   font-size: 1.75rem;
@@ -84,9 +122,37 @@ h1 {
   position: relative;
 }
 
+/* The main view's header carries the spacing that its <h1> used to, so the
+   header box is exactly as tall as the wordmark inside it - which is what lets
+   the icon buttons centre themselves against the wordmark below rather than
+   against the wordmark plus a margin. The search view's header keeps using its
+   <h1>'s own margin, since its title is still text. */
+.app-header {
+  margin-bottom: 1.5rem;
+}
+
+.app-title {
+  margin: 0;
+}
+
+/* display: block, not inline: an inline image sits on a text baseline and
+   leaves a few pixels of descender space below itself, which would put the
+   header's true centre below the mark's and tilt the icon buttons off it.
+   Fluid height so the mark shrinks on a phone instead of squeezing the
+   buttons. */
+.app-title img {
+  display: block;
+  margin: 0 auto;
+  height: clamp(64px, 15vw, 104px);
+  width: auto;
+}
+
 .icon-btn {
   position: absolute;
-  top: 0;
+  /* Centred on the header, so a tall wordmark doesn't leave the two buttons
+     stranded at the top of it. */
+  top: 50%;
+  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -101,16 +167,29 @@ h1 {
   transition: border-color 0.12s ease, transform 0.08s ease;
 }
 
+/* Knocks a hole in an icon so a badge drawn over it reads as being on top -
+   the button's own background, not a fixed colour, so it follows the theme.
+   See the info button's gear badge in index.html. */
+.icon-cutout {
+  fill: canvas;
+}
+
 .icon-btn:hover {
   border-color: color-mix(in srgb, var(--card-border) 40%, var(--accent) 60%);
 }
 
+/* Has to restate the centring translate: a bare scale() here would replace it
+   and drop the button half its own height on every press. */
 .icon-btn:active {
-  transform: scale(0.97);
+  transform: translateY(-50%) scale(0.97);
 }
 
 #search-open-btn {
   right: 0;
+}
+
+#settings-open-btn {
+  left: 0;
 }
 
 /* The search icon (icons/search-icon.png) is a solid black glyph on a
@@ -141,20 +220,233 @@ h1 {
   left: 0;
 }
 
-.search-input-row {
-  margin: 0.5rem 0 1.25rem;
+/* --- Swara-names panel --------------------------------------------------
+   An information panel: the note-name reference and the one preference that
+   belongs with it (which numbering convention to use). It floats over the
+   main page rather than replacing it, with no dimming scrim, so the label
+   change you just made is visible on the widget behind while you are still
+   reading the table that explains it.
+
+   Full-viewport backdrop, so a click anywhere off the panel closes it - the
+   page beneath stays visible but isn't clickable through, which keeps "am I
+   reading the reference or using the app" unambiguous. */
+#settings-view {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  overflow-y: auto;
+  padding: 1rem;
+  overscroll-behavior: contain;
 }
 
-#raga-search-input {
-  width: 100%;
+#settings-view[hidden] {
+  display: none;
+}
+
+/* Opaque and shadowed, since it has the live page immediately behind it
+   rather than a darkened one - without both it would read as part of the
+   page rather than above it. */
+.settings-panel {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 0.6rem 1rem 0.9rem;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: canvas;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.settings-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.4rem;
+}
+
+.settings-panel-header h2 {
+  font-family: "Forum", Georgia, serif;
+  font-size: 1.25rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
+/* Not .icon-btn: that one is absolutely positioned against a .page-header. */
+.settings-close {
+  flex: none;
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  line-height: 1;
   font-family: inherit;
-  font-size: 1rem;
-  padding: 0.6rem 0.9rem;
   border: 1px solid var(--card-border);
   border-radius: 8px;
   background: canvas;
   color: canvastext;
+  cursor: pointer;
+}
+
+.settings-close:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Controls live on the main page again, collapsible - they are what you
+   reach for while working, so a trip to an overlay for every input-style
+   change was a step too far. */
+.controls-panel {
+  margin: 0 0 1.25rem;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  background: canvas;
   box-shadow: var(--card-shadow);
+}
+
+.controls-panel > summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.controls-panel > summary:hover {
+  color: var(--accent);
+}
+
+/* The row carries its own bottom margin for when it sat directly on the
+   page; inside the panel that is just a redundant gap before the border. */
+.controls-panel .controls-row {
+  margin: 0.7rem 0 0;
+}
+
+.search-input-row {
+  margin: 0.5rem 0 1.25rem;
+}
+
+/* The positioned parent the suggestion list hangs off. Everything here is
+   ordinary in-flow DOM inside it, which is the whole point of replacing the
+   native <datalist>: its popup was drawn by the browser, so it looked
+   different on every one of them and escaped the page's layout entirely
+   inside an embedded webview. */
+.search-combobox {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+
+#raga-search-input {
+  flex: 1;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 1rem;
+  padding: 0.6rem 0.9rem;
+  border: 1px solid var(--card-border);
+  border-radius: 8px 0 0 8px;
+  background: canvas;
+  color: canvastext;
+  box-shadow: var(--card-shadow);
+}
+
+/* Joined to the input rather than floated inside it: no overlap to keep clear
+   of, no guessing at the input's own padding, and it stays a full-height
+   target - 2.9rem wide, comfortably past the ~44px minimum for a thumb. */
+.combobox-toggle {
+  flex: none;
+  width: 2.9rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--card-border);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, transparent, canvastext 4%);
+  color: canvastext;
+  cursor: pointer;
+  box-shadow: var(--card-shadow);
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+
+.combobox-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* The chevron turns to point at the list it opened, so the button reads as
+   "close this" while the list is down. */
+.combobox-toggle svg {
+  transition: transform 0.14s ease;
+}
+
+.combobox-toggle.is-open svg {
+  transform: rotate(180deg);
+}
+
+/* Overlays the results below rather than pushing them down - it's a transient
+   callout, and reflowing several hundred result rows on every keystroke would
+   make the page jump under the reading eye. Its own scroll container, capped
+   well short of the viewport so the input that drives it always stays
+   visible. */
+.search-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  max-height: min(50vh, 20rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  margin: 0;
+  padding: 0.25rem;
+  list-style: none;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  /* Opaque, and shadowed like the settings panel: it has live page content
+     immediately behind it, so without both it would read as part of the list
+     underneath. */
+  background: canvas;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.search-suggestions[hidden] {
+  display: none;
+}
+
+.suggestion {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* Hover and the keyboard cursor are deliberately the same highlight: there is
+   only ever one "the one you're about to pick", however you're pointing at
+   it. */
+.suggestion:hover,
+.suggestion.is-active {
+  background: var(--accent-soft);
+}
+
+.suggestion-tag {
+  flex: none;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+}
+
+.suggestion-empty {
+  padding: 0.5rem 0.6rem;
+  opacity: 0.7;
+  font-style: italic;
 }
 
 /* Section divider before the "related ragas" tail of a name search's
@@ -251,18 +543,28 @@ h1 {
   cursor: pointer;
 }
 
+/* The toggle labels are allowed to wrap; the pill labels above are not, and
+   that asymmetry is the point. `nowrap` on everything meant the longest label
+   in the app - "Record swara order (for vakra search)" - set a floor on the
+   controls panel's width that no narrow screen could honour, and the whole
+   page overflowed sideways by 6px at 320px. A pill that wrapped would look
+   broken; a toggle label that wraps just takes a second line, and at these
+   widths the four toggles are already stacked one per line anyway.
+   Flex rather than plain `white-space: normal`, so the second line aligns
+   with the first instead of starting underneath the switch - `gap` restores
+   the word space that becoming a flex item would otherwise collapse away. */
+.control-group label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: normal;
+}
+
 /* Sits at the top of the note-reference panel, above the table. Reuses
    .control-group for the same card look as Input style/Layout, but drops
    their border/shadow/margin since it's inside an already-bordered
    <details> - just needs the segmented radio-pill look (below) and a
    little breathing room before the table. */
-.theme-toggle {
-  border: none;
-  box-shadow: none;
-  padding: 0;
-  margin-bottom: 0.8rem;
-}
-
 /* Segmented-pill look for the plain (non-table) radio groups - Input
    style, Layout, and the theme toggle. Table-choice's small inline G1/G3
    radios deliberately keep the native look instead (a big pill button
@@ -399,10 +701,12 @@ h1 {
   flex: 1 1 260px;
 }
 
-/* Piano only: a keyboard is far too wide to survive being halved, so its two
-   directions run one after the other down the page instead of side by side.
-   The wheel and the buttons are happy in a column and stay there. */
-#separate-inputs.stacked .direction-block {
+/* Every style stacks, not just Piano. Side-by-side halves the available
+   width, which forces the widget to a different size than the combined view
+   uses - and a keyboard can't survive being halved at all. Stacking costs
+   the ability to see both directions at once on a wide screen, and buys one
+   consistent size everywhere plus full-size touch targets on a phone. */
+#separate-inputs .direction-block {
   flex: 1 1 100%;
 }
 
@@ -534,11 +838,33 @@ h1 {
   transform: scale(0.97);
 }
 
+/* No background on the board. A white slab behind the keys did hide the
+   rounding seams, but it also put a white edge around a dark-theme keyboard,
+   which is worse than the thing it fixed. The seams are handled at source
+   instead - see the half-pixel overlap in piano.js. */
 .piano {
   position: relative;
   height: 200px;
-  margin: 0.5rem 0 1.5rem;
+  /* No top margin: the reference strip is always directly above and owns the
+     spacing between the two (see .piano-ref). A margin here would collapse
+     against the strip's and win, which is what used to hold the labels 8px
+     off the keys. */
+  margin: 0 0 1.5rem;
   user-select: none;
+  container-type: inline-size; /* so a black key's label can be sized against the board */
+}
+
+/* A black key is 3.73% of the board - about 11px on a phone, and genuinely 11px
+   now that the UA's default button padding isn't inflating it - while the widest
+   single-line swara label ("M1") is about 1.3x its own font-size wide. At the
+   size the white keys use, that overflows onto the white keys either side, where
+   a black key's light text has no contrast at all.
+   Black and white labels are therefore the same size everywhere the board is
+   wide enough for it - both hit the 0.78rem cap on a laptop - and diverge only
+   on a phone, where the black key genuinely cannot hold what the white one
+   can. */
+.piano .black-key .key-label {
+  font-size: clamp(0.4rem, 2.6cqw, 0.78rem);
 }
 
 .key {
@@ -550,9 +876,17 @@ h1 {
 .piano .key {
   position: absolute;
   display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding-bottom: 0.6rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  /* All four sides, not just the bottom. A <button>'s UA default is
+     `padding: 1px 6px`, and with box-sizing: border-box those 12px act as a
+     floor on the used width - so on a phone a black key came out 13.6px wide
+     against the 10.8px its 3.73% asks for, about 27% too wide, squeezing the
+     white keys' exposed tops to match. It also left a white key only ~6px of
+     content box to centre a label in. Zeroing the sides makes every key the
+     width it declares at every screen size. */
+  padding: 0 0 0.6rem;
 }
 
 .button-rows {
@@ -587,9 +921,9 @@ h1 {
    plus their gaps inside a 260px column, and the cap keeps them sane on a
    wide one. Every button is the same size regardless of how many sit in its
    row, so a lone S or P still lines up with row 2's six.
-   The label sits centred (a circle has no flat bottom to hang it off);
-   there's no order-badge stack to leave room for, since Buttons has never
-   shown one - the selection box below does that job. */
+   The label sits centred (a circle has no flat bottom to hang it off), with
+   nothing else competing for the space - the selection box below is what
+   shows the recorded order, for this style and every other. */
 .button-key {
   position: relative;
   box-sizing: border-box;
@@ -599,7 +933,7 @@ h1 {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: clamp(0.55rem, 3.4cqw, 0.8rem);
+  font-size: clamp(0.62rem, 3.8cqw, 0.9rem);
   line-height: 1.1;
   cursor: pointer;
 }
@@ -628,6 +962,75 @@ h1 {
   border-radius: 10px;
 }
 
+/* An insertion point. `flex: 1` rather than a fixed sliver, so the gaps soak
+   up every pixel of the tray the circles aren't using - including the whole
+   run of empty space after the last swara, which is the "add at the end"
+   target. A 2px hairline between two adjacent circles is technically a hit
+   target and practically isn't, especially on a phone.
+   Being real elements rather than computed midpoints means the drop test in
+   attachTrayEditing is just "which of these is nearest", and it keeps working
+   once the tray wraps onto several rows. */
+.tray-gap {
+  flex: 1 1 0.5rem;
+  min-width: 0.5rem;
+  align-self: stretch;
+  min-height: 3rem;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  cursor: pointer;
+  position: relative;
+  transition: background-color 0.12s ease;
+}
+
+.tray-gap:hover {
+  background: color-mix(in srgb, transparent, canvastext 7%);
+}
+
+/* The caret itself stays a hairline whatever the gap has grown to - it marks
+   a position between two swaras, and a wide bar would read as a slot of its
+   own. */
+.tray-gap::after {
+  content: "";
+  position: absolute;
+  top: 12%;
+  bottom: 12%;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  border-radius: 2px;
+  background: canvastext;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.tray-gap:hover::after {
+  opacity: 0.3;
+}
+
+.tray-gap.active::after,
+.tray-gap.drop-target::after {
+  background: var(--accent);
+  opacity: 1;
+  width: 3px;
+  margin-left: -1.5px;
+}
+
+/* Lifted out of the row while it's being carried, so it reads as "in hand"
+   rather than as still occupying its old slot. */
+.tile.dragging {
+  opacity: 0.5;
+  transform: scale(0.92);
+}
+
+/* Suppresses the browser's own scroll/pan handling for the duration - the
+   tray is a drag surface while a tile is in hand. */
+.tray.is-dragging {
+  touch-action: none;
+  cursor: grabbing;
+}
+
 /* The assembled scale, as the same coloured circles the input styles use -
    the tray reads as the notes themselves rather than as a separate
    vocabulary of generic chips. Fixed size (they wrap rather than shrink),
@@ -645,7 +1048,7 @@ h1 {
   align-items: center;
   justify-content: center;
   padding-top: 0.55rem;
-  font-size: 0.75rem;
+  font-size: 0.84rem;
   line-height: 1.1;
   text-align: center;
   cursor: pointer;
@@ -659,77 +1062,79 @@ h1 {
   font-size: inherit;
 }
 
-/* Centered horizontally, near the top of the key/tile - not at a corner.
-   Two earlier attempts hung it off the top-right corner (first with a
-   negative offset entirely outside the box, then just 2px inside); both
-   still fell within the ~3.5%-of-width strip that an adjacent black key's
-   box overlaps on a piano, so it got visually painted over (and ate the
-   click meant for the key underneath). Dead center is clear of that zone
-   on every key, white or black. The stack itself is positioned here; the
-   individual badges inside it are stacked in normal flow, not each
-   independently absolutely-positioned (which is what made repeated-note
-   badges overlap each other before). */
-.order-badge-stack {
-  position: absolute;
-  top: 2px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  z-index: 3;
+/* Every place a swara *name* is set, and nowhere else. `.key-label` covers the
+   piano keys, the wheel nodes, the Buttons circles and the tray tiles, since
+   they all share it; the other three are the piano's reference strip, the
+   wheel's reference ring, and the swara text in the results list and the
+   reference table. Prose around them - "Arohana:", the traditional names in
+   the reference table - stays on the UI face. */
+.key-label,
+.piano-ref-label,
+.wheel-ref-label,
+.swara-code {
+  font-family: var(--font-swara);
 }
 
-/* Clickable - removes that exact recorded occurrence (see
-   buildOrderBadgeStack in notation.js). Scales up slightly on hover/focus
-   as the only affordance hint, since a 14px circle has no room for
-   anything fancier like an icon. */
-.order-badge {
-  background: #ffb300;
-  color: #3a2900;
-  font-size: 0.6rem;
-  font-weight: 700;
-  border-radius: 50%;
-  width: 14px;
-  height: 14px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  line-height: 1;
-  cursor: pointer;
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
-}
-
-.order-badge:hover,
-.order-badge:focus-visible {
-  transform: scale(1.2);
-  box-shadow: 0 0 0 3px rgba(255, 179, 0, 0.35);
-  outline: none;
-}
-
-/* Piano-only overflow indicator (see buildOrderBadgeStack's `maxVisible`) -
-   represents more than one hidden occurrence, so unlike a real order badge
-   it isn't clickable/removable and gets a muted neutral color instead of
-   the removable badges' yellow, to read as "informational" rather than
-   "actionable." */
-.order-badge-more {
-  background: #8886;
-  color: canvastext;
-  cursor: default;
-}
-
-.order-badge-more:hover,
-.order-badge-more:focus-visible {
-  transform: none;
-  box-shadow: none;
+/* Gentium's cap height is 63 against the UI face's 71, so at an equal
+   font-size it reads about 11% smaller. Every swara label's size was scaled by
+   ~12% to compensate; these two sit inside running UI text instead of in a
+   widget of their own, so they take the correction as a relative em and stay
+   in step with whatever the surrounding prose is set to. Without it a scale
+   line reads as small type wedged into normal type. */
+.swara-code {
+  font-size: 1.1em;
 }
 
 .key-label {
-  font-size: 0.7rem;
+  font-size: 0.78rem;
   pointer-events: none;
   white-space: nowrap;
+}
+
+/* The reference strip: one line above the keyboard carrying the swara each key
+   held before the transpose. See piano.js for why it sits above the keys
+   rather than on them.
+
+   The height is reserved whether or not anything is in it, so pressing
+   Transpose changes what the strip says without moving the keyboard - the keys
+   have to stay put under your finger between one tap and the next.
+
+   container-type so the labels can size themselves against the keyboard: the
+   strip is as dense as the keys are, and its tightest pitch is half a white key
+   (a black key's label against its white neighbour's), about 10px on a small
+   phone. No fixed size fits that and still reads on a laptop. */
+.piano-ref {
+  position: relative;
+  /* Two lines at the label's largest size: 0.62rem x 1.15 x 2 = 1.43rem. The
+     strip has to be tall enough for a compound name at the widest the board
+     gets, or those labels hang out of the top of it. */
+  height: 1.65rem;
+  /* The whole gap between a label and the key it names lives here - .piano's
+     own top margin is zero, so there is one number to tune rather than two
+     that collapse against each other. Small on purpose: a label is naming the
+     key directly beneath it and wants to read as attached to it. */
+  margin-bottom: 0.1rem;
+  container-type: inline-size;
+}
+
+/* Bottom-aligned, so a plain name sits on the lower line and only a compound
+   one reaches up to the second - the same way the key's own label stacks, so
+   the strip and the keyboard read as one column. Italic and dulled says "this
+   is what used to be here", the format the wheel's reference ring uses too. */
+.piano-ref-label {
+  position: absolute;
+  bottom: 0;
+  transform: translateX(-50%);
+  text-align: center;
+  white-space: pre-line;
+  /* 2.05cqw is what keeps the tightest pair apart - a black key's label and
+     its white neighbour's, half a white key or board/28 apart - with a hair of
+     air left at 288px, the narrowest the page goes. */
+  font-size: clamp(0.34rem, 2.3cqw, 0.62rem);
+  line-height: 1.15;
+  opacity: 0.5;
+  font-style: italic;
+  pointer-events: none;
 }
 
 /* Compound labels (e.g. R2/G1) stack G/N on top of R/D, on both white and
@@ -775,18 +1180,37 @@ h1 {
 }
 
 /* Outside the twelve-semitone window that maps onto real degrees 0-12, so
-   there's nothing in the selection model for these to be. They still carry
-   the right swara name for their pitch (an octave up or down), because that
-   context is the whole reason the keyboard was widened - they're just not
-   pressable while a scale is being built. Free play drops the class
-   entirely and every key comes alive. */
-.piano .key.out-of-range {
-  opacity: 0.34;
+   there's nothing in the selection model for these to be - though they do
+   still sound when pressed.
+
+   The cue is deliberately faint. An earlier `opacity: 0.34` on the whole key
+   read as "broken" rather than "not part of this octave": it dimmed the key
+   *bodies* so hard that the keyboard stopped looking like one instrument.
+   The cue used to be a faded *label* as well, which read well on its own but
+   stopped working once transposing put a faded annotation on every key: two
+   different greys, a line apart, meaning two unrelated things - "this key is
+   outside the octave" and "this key used to be P". The key bodies carry the
+   whole cue now, and the labels on them are drawn at full strength like any
+   other, so the only faded text on the keyboard is the annotation. */
+.piano .white-key.out-of-range {
+  background: #e7eaee;
   cursor: default;
 }
 
-.piano .key.out-of-range .key-label {
-  opacity: 0.8;
+/* A black key needs the opposite move from a white one to say the same thing.
+   Washing a white key toward grey reads immediately, because grey is darker
+   than its neighbours; washing a black key toward grey the same way - #2f3237
+   against #222 - was almost invisible, since it was still black next to black.
+   So it goes the other way, up to a mid grey, and takes dark text with it. The
+   result is that every out-of-range key, white or black, ends up the same
+   family of grey with the same dark lettering: one state, one look, instead of
+   two near-invisible variations on "slightly off". A lighter black key can't be
+   confused with a selected one either - selected is the accent blue. */
+.piano .black-key.out-of-range {
+  background: #767b83;
+  border-color: #55595f;
+  color: #191b1e;
+  cursor: default;
 }
 
 .black-key:hover:not(.selected) {
@@ -816,23 +1240,31 @@ h1 {
    cqw sizing has to sit on the descendants, not here - an element can't
    query itself, so a cqw on .wheel would silently measure some ancestor
    (or the viewport) instead.
-   touch-action: none, or the page scrolls out from under a sweep. */
+
+   No touch-action here, deliberately. `touch-action: none` on the wheel
+   root did stop the page scrolling out from under a sweep, but it applied
+   to the whole 380px *square* - so the four empty corners and the hollow
+   middle, which are most of that box's area, swallowed every scroll gesture
+   too. On a phone that's a large dead zone in the middle of the page. It
+   now sits on the note circles only (see .wheel-node): a drag that starts
+   on a note is a sweep, a drag that starts anywhere else scrolls the page,
+   and once a sweep is under way setPointerCapture keeps it regardless of
+   what it passes over. */
 .wheel {
   position: relative;
   width: min(100%, 380px);
   aspect-ratio: 1;
   margin: 0 auto;
   container-type: inline-size;
-  touch-action: none;
   user-select: none;
 }
 
-/* Separate arohana/avarohana mode renders two wheels, one per direction,
-   the same way Piano does - capped so both fit on a 360px phone screen
-   without scrolling. CSS only: wheel.js takes no compact flag. */
-#separate-inputs .wheel {
-  max-width: 260px;
-}
+/* No size override for separate mode: a widget is the same size whichever
+   layout it's in. Shrinking the wheel to 260px so two could sit side by side
+   meant the same raga drew at two different scales depending on a radio
+   button elsewhere, and made the separate-mode nodes the tightest touch
+   targets in the app. The two directions stack instead (see
+   .direction-block), so each gets the full width the combined view gets. */
 
 /* An unselected chip is its own colour mixed down into the page. The mix
    percentage can't be shared between themes: against a near-black canvas 22%
@@ -852,6 +1284,16 @@ h1 {
   --sl: 0.645;
   --chip-idle: 42%;
   --chip-hover: 62%;
+  /* The pressed-note highlight and the melakarta tag. Both were fixed
+     translucent colours over `canvas`, which is a light-theme assumption:
+     28% green over white is a soft mint, but the same 28% over near-black
+     is a muddy smear barely darker than the row it sits on. Each theme gets
+     a background lightness that actually separates from its own page, and
+     text chosen to sit on that background rather than on the page. */
+  --match-bg: oklch(0.93 0.055 152);
+  --match-fg: oklch(0.38 0.06 152);
+  --mela-bg: oklch(0.8 0.115 78);
+  --mela-fg: oklch(0.28 0.06 78);
 }
 
 /* Dark-theme mixes: see the comment above for why these differ. */
@@ -860,6 +1302,10 @@ h1 {
     --sl: 0.725;
     --chip-idle: 22%;
     --chip-hover: 42%;
+    --match-bg: oklch(0.4 0.065 152);
+    --match-fg: oklch(0.9 0.03 152);
+    --mela-bg: oklch(0.72 0.13 78);
+    --mela-fg: oklch(0.24 0.05 78);
   }
 }
 
@@ -867,12 +1313,20 @@ h1 {
   --sl: 0.725;
   --chip-idle: 22%;
   --chip-hover: 42%;
+  --match-bg: oklch(0.4 0.065 152);
+  --match-fg: oklch(0.9 0.03 152);
+  --mela-bg: oklch(0.72 0.13 78);
+  --mela-fg: oklch(0.24 0.05 78);
 }
 
 :root[data-theme="light"] {
   --sl: 0.645;
   --chip-idle: 42%;
   --chip-hover: 62%;
+  --match-bg: oklch(0.93 0.055 152);
+  --match-fg: oklch(0.38 0.06 152);
+  --mela-bg: oklch(0.8 0.115 78);
+  --mela-fg: oklch(0.28 0.06 78);
 }
 
 /* Palette C - swara families (the default). A hue per family, ordered
@@ -955,12 +1409,14 @@ h1 {
 .wheel-node {
   position: absolute;
   z-index: 2;
+  /* The only part of the wheel that claims a drag - see .wheel above. */
+  touch-action: none;
   padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: inherit;
-  font-size: clamp(0.42rem, 2.9cqw, 0.72rem);
+  font-size: clamp(0.47rem, 3.25cqw, 0.8rem);
   line-height: 1.1;
   cursor: pointer;
 }
@@ -968,6 +1424,33 @@ h1 {
 /* .key-label's own fixed 0.7rem would defeat the cqw sizing above. */
 .wheel-node .key-label {
   font-size: inherit;
+}
+
+/* The pre-transpose swara names, outside the ring. Non-interactive and quiet:
+   they are a frame of reference, not a second set of things to press. */
+.wheel-ref-ring {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.wheel-ref-label {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  /* pre-line, not nowrap: appendReferenceRing puts a newline between the two
+     halves of a compound name, and the resulting narrow box is what keeps the
+     ring clear of the S' circle. Nothing here can wrap on its own - the box is
+     absolutely positioned with no width, so it shrink-to-fits. */
+  white-space: pre-line;
+  text-align: center;
+  font-size: clamp(0.38rem, 2.6cqw, 0.67rem);
+  line-height: 1.1;
+  opacity: 0.42;
+  /* Italic, matching the Piano's reference strip - one format for "the swara
+     that used to be here", wherever the app says it. */
+  font-style: italic;
+  font-weight: 500;
 }
 
 /* Order mode: how many times this note was recorded, and nothing more -
@@ -1051,9 +1534,11 @@ h1 {
 .wheel-centre {
   position: absolute;
   left: 50%;
-  top: 53%;
+  top: 50%;
   transform: translate(-50%, -50%);
-  width: 38%;
+  /* Narrow enough that its corners stay inside the sweep band's inner edge
+     (19.5 units): half-width 17 plus half-height ~6 gives 18. */
+  width: 34%;
   z-index: 3;
   display: flex;
   justify-content: center;
@@ -1072,10 +1557,55 @@ h1 {
   color: canvastext;
   opacity: 0.85;
   cursor: pointer;
+  /* A halo of the page background, always on. This text has no backdrop of its
+     own - it sits directly on the polygon, whose fill is a conic blend of
+     whichever swaras are selected - so there is no one colour it can be that
+     reads against every scale. The halo gives it a backdrop the width of the
+     letters themselves. */
+  text-shadow: 0 0 3px canvas, 0 0 3px canvas, 0 0 6px canvas;
+  transition: transform 0.12s ease, opacity 0.12s ease, color 0.12s ease, text-shadow 0.12s ease;
 }
 
-.wheel-summary:hover:not(:disabled) {
-  color: var(--accent);
+/* Three cues at once, and not one of them touches the glyphs' colour.
+   The history is worth keeping. Recolouring the whole word to the accent blue
+   lost against the cooler half of the wheel outright - a blue word on a
+   blue-green fill. An accent underline fixed that by moving the colour off the
+   glyphs, but an underline is a heavy thing to rule across a raga's name.
+   Tinting the text toward the accent instead was tempting and is the wrong
+   trade: 78% canvastext measures as only an 8% drop in perceptual lightness but
+   takes the WCAG contrast ratio against a mid-tone fill from 4.2 to 3.25, so
+   the one thing that had to be preserved is the thing it spends.
+   So the text keeps its colour and gets *brighter* (0.85 -> 1), and the accent
+   lives entirely outside the letters as a glow. The canvas halo is listed first
+   and therefore paints over the accent stops, which is what keeps the letters
+   separated from the fill; the accent's wider radii show beyond it as a ring, so
+   the word reads as lit up rather than recoloured. The scale is the third cue
+   and is pure motion - transform doesn't reflow, so it cannot disturb the centre
+   summary's clearance inside the sweep band. */
+.wheel-summary:hover:not(:disabled),
+.wheel-summary:focus-visible:not(:disabled) {
+  opacity: 1;
+  text-shadow:
+    0 0 3px canvas,
+    0 0 3px canvas,
+    0 0 6px canvas,
+    0 0 10px color-mix(in srgb, var(--accent) 80%, transparent),
+    0 0 18px color-mix(in srgb, var(--accent) 45%, transparent);
+  transform: scale(1.06);
+  outline: none;
+}
+
+/* The scale is decoration; the tint and the halo carry the meaning on their
+   own, so it is safe to drop entirely. */
+@media (prefers-reduced-motion: reduce) {
+  .wheel-summary {
+    transition: none;
+  }
+
+  .wheel-summary:hover:not(:disabled),
+  .wheel-summary:focus-visible:not(:disabled) {
+    transform: none;
+  }
 }
 
 .wheel-summary:disabled {
@@ -1106,16 +1636,80 @@ h1 {
   justify-self: end;
 }
 
+/* A hidden stand-in for "Set as 0", so the tail column reserves the same width
+   the lead column needs and the centre group stays centred on the widget.
+   The 1fr columns balance on their own while there is room to spare, but once
+   the row gets narrow the lead's min-content wins over its 1fr share and shoves
+   the arrows off the widget's axis - measured 12.8px right of centre on a 320px
+   phone once the label grew to two lines. Reserving the same box on the other
+   side costs nothing and holds at every width.
+   Coupled to .set-zero-btn's text and box by hand: if that button's label or
+   padding changes, change it here too. The failure mode is a few pixels of
+   asymmetry, not a broken layout. */
+.transpose-tail::before {
+  content: "Set as 0";
+  visibility: hidden;
+  display: inline-block;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid transparent;
+}
+
+/* Below this width the three-column row cannot do both things it is asked to
+   do. Centring the arrow group on the widget needs 348px - the group is 224px
+   and "Set as 0" claims 62px on each side, its own and the tail's matching
+   reservation - and a 375px phone only offers a 343px row. So on narrow screens
+   "Set as 0" takes a line of its own above the arrows, which keeps the arrows
+   exactly on the widget's axis and keeps the button from being squeezed. On
+   anything wider the row stays as it was. */
+@media (max-width: 383px) {
+  .transpose-row {
+    grid-template-columns: 1fr;
+    row-gap: 0.3rem;
+  }
+
+  .transpose-lead {
+    justify-self: center;
+  }
+
+  .transpose-tail {
+    display: none;
+  }
+}
+
 .transpose-main {
   display: flex;
   align-items: center;
   gap: 0.35rem;
 }
 
+/* The control's name on two lines: the term, then a plain-English gloss under
+   it. Two lines rather than one because at the narrowest the app goes (a 288px
+   row) the label has 111.7px to work in, and the term alone needs 83.5px - a
+   single line carrying both names needs 149.7px and does not fit even with
+   "Set as 0" taken out of the row.
+   The gloss is deliberately not "Transpose": transposing moves every pitch,
+   while graha bhedam holds the pitches still and moves Sa to a different one of
+   them. They are different operations and this is the second one. */
 .transpose-title {
   font-size: 0.8rem;
   opacity: 0.75;
   letter-spacing: 0.02em;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.15;
+  text-align: center;
+  /* Neither line may break mid-term. Without this, a squeezed row wrapped it to
+     "Graha / bhedam", which reads as two words rather than one name. */
+  white-space: nowrap;
+}
+
+.transpose-title .gloss {
+  font-size: 0.78em;
+  opacity: 0.68;
+  letter-spacing: 0;
 }
 
 /* How far from the baseline the selection has been carried. There are two of
@@ -1203,6 +1797,10 @@ h1 {
 .set-zero-btn {
   font-family: inherit;
   font-size: 0.75rem;
+  /* Never "Set / as / 0" down three lines, which is what it did on a narrow
+     row - and which also made the lead column an unpredictable width, so the
+     arrows drifted off the widget's axis. */
+  white-space: nowrap;
   padding: 0.25rem 0.6rem;
   border: 1px solid var(--card-border);
   border-radius: 8px;
@@ -1236,6 +1834,17 @@ h1 {
   list-style: none;
   padding: 0;
   margin: 0;
+}
+
+/* The tallies, moved out of the wheel's centre. Styled as a caption for the
+   list rather than as a row in it - it isn't a raga. */
+.results-counts {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+  padding: 0 0.5rem 0.5rem;
 }
 
 .result-row {
@@ -1295,23 +1904,72 @@ h1 {
   margin-right: 0.5rem;
 }
 
+/* The bridge from a found name back to the note-based finder (see
+   loadRagaIntoKeyboard). Outlined and quiet: it sits on every row of a
+   possibly long list, so it can't compete with the row's own name, but it
+   still has to read as a button and not as another badge - hence the accent
+   on hover, which no badge ever does. */
+.result-load-btn {
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 600;
+  margin-left: 0.5rem;
+  padding: 0.1rem 0.5rem;
+  vertical-align: middle;
+  white-space: nowrap;
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  background: canvas;
+  color: canvastext;
+  cursor: pointer;
+  transition: border-color 0.12s ease, color 0.12s ease, transform 0.08s ease;
+}
+
+.result-load-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.result-load-btn:active {
+  transform: scale(0.97);
+}
+
+/* Green is reserved for "this is precisely what you asked for" and is never
+   spent on anything less. Order mode used to badge its partial matches in
+   the same green as its exact ones, so the strongest cue in the list meant
+   two different things depending on a toggle elsewhere on the page. */
 .badge {
   font-size: 0.7rem;
   font-weight: 600;
-  color: white;
-  background: #2c9d5f;
   border-radius: 6px;
   padding: 0.15rem 0.45rem;
   margin-left: 0.4rem;
   vertical-align: middle;
 }
 
+.badge-exact {
+  color: white;
+  background: #2c9d5f;
+}
+
+/* Outlined rather than filled: present enough to read, quiet enough that it
+   can't be mistaken for the green at a glance down the list. */
+.badge-partial {
+  color: canvastext;
+  background: none;
+  border: 1px solid var(--card-border);
+  opacity: 0.75;
+  font-weight: 500;
+}
+
 /* Distinct from the green "exact"/order badges: those describe how well the
    row matched what you asked for, this one describes what the raga *is* -
-   and it's what explains why the row is sitting above the janyas. */
+   and it's what explains why the row is sitting above the janyas. Filled
+   like .badge-exact rather than washed into the page, so it carries the same
+   weight in both themes; amber keeps it unmistakable against the green. */
 .badge-mela {
-  background: color-mix(in srgb, canvas 72%, #b07d1a 28%);
-  color: canvastext;
+  background: var(--mela-bg);
+  color: var(--mela-fg);
 }
 
 .mela-context {
@@ -1321,54 +1979,34 @@ h1 {
 
 .scales {
   font-size: 0.85rem;
-  opacity: 0.85;
+  /* Muted through colour, not `opacity`. Opacity on this container faded
+     everything inside it including the .note-match highlights - dimming the
+     one thing on the row that is meant to stand out. */
+  color: color-mix(in oklab, canvastext 82%, canvas);
   margin-top: 0.2rem;
 }
 
-/* Marks the notes in a raga's own scale that the user actually pressed -
-   a milder green than .badge's, since this highlights many notes inline
-   rather than calling out one summary word. */
+/* Marks the notes in a raga's own scale that the user actually pressed.
+   Carries its own foreground as well as its background: it has to read
+   against the highlight, not against the page, and it sits inside a .scales
+   block that is deliberately dimmer than full-strength text.
+
+   Kept deliberately quiet. Unlike the melakarta tag - one label per row -
+   this repeats across most of a scale line, so the intensity that reads as
+   simply "clear" on a single badge reads as glare stamped on eight notes in
+   a row. The tint only has to separate the notes you pressed from the ones
+   the raga adds, so the chroma stays low and the weight is left alone. */
 .note-match {
-  background: rgba(74, 189, 125, 0.28);
+  background: var(--match-bg);
+  color: var(--match-fg);
   border-radius: 3px;
-  padding: 0 0.15rem;
+  padding: 0 0.2rem;
 }
 
 .empty {
   opacity: 0.7;
   font-style: italic;
   padding: 0.6rem 0;
-}
-
-.note-reference,
-.controls-panel {
-  margin: 1rem 0 1.5rem;
-  border: 1px solid var(--card-border);
-  border-radius: 8px;
-  padding: 0.6rem 0.9rem;
-  background: canvas;
-  box-shadow: var(--card-shadow);
-}
-
-.note-reference summary,
-.controls-panel summary {
-  cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-.note-reference summary:hover,
-.controls-panel summary:hover {
-  color: var(--accent);
-}
-
-/* The controls-row it wraps already carries its own margin-bottom (for
-   spacing when it sat directly on the page) - inside the panel's own
-   padding that would just double up as a redundant gap before the box's
-   bottom border. */
-.controls-panel .controls-row {
-  margin-bottom: 0;
-  margin-top: 0.6rem;
 }
 
 .reference-table {

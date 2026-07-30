@@ -14,31 +14,61 @@
 // (index.html + app.js), not the wheel's: they turned out to belong to the
 // selection rather than to any one way of drawing it, and Piano wants them
 // too.
-import { DEGREES, SWARA_PALETTE, applySwaraColors, keyLabelHtml, renderSelectionBox, swaraColor } from "../notation.js";
+import { DEGREES, SWARA_PALETTE, applySwaraColors, keyLabelHtml, labelForDegree, renderSelectionBox, stackReferenceLabel, swaraColor } from "../notation.js";
 import { playPianoTone } from "../audio.js";
 
 // All positions are in a 0-100 square coordinate space, applied as
-// percentages so the whole widget scales with its container. Retuning any
-// of these means re-checking the clearances in specs/03: ring nodes clear
-// each other (spacing 2*pi*32/12 = 16.8 vs diameter 13), the ring clears
-// the box (32 + 6.5 < 50), S' clears the box (45 + 5 = 50, with the centre
-// offset giving the margin), and S' clears S (centre distance 13 vs radii
-// sum 11.5).
+// percentages so the whole widget scales with its container.
+//
+// Four concentric bands, from the middle out: the shape, the ring of note
+// circles, the S' circle, and - only while transposed - the reference ring
+// of original swara names. Retuning any of these means re-checking every
+// clearance below.
 const CENTRE_X = 50;
-const CENTRE_Y = 53; // nudged down: the S' node needs headroom at the top
-const RING_R = 32;
-const RING_NODE_R = 6.5;
-const UPPER_SA_R = 45;
-const UPPER_SA_NODE_R = 5.0; // deliberately smaller than a ring node
+const CENTRE_Y = 50;
+const RING_R = 27.5;
+const RING_NODE_R = 5.6;
+const UPPER_SA_R = 38.5;
+const UPPER_SA_NODE_R = 4.6; // deliberately smaller than a ring node
+// The reference ring sits close in, just outside the note circles, so a spoke
+// reads as one thing: the swara that is there now and the swara that used to
+// be, a few units apart. Out at 47.5 - where it started, because that was the
+// only radius that cleared the S' circle - it read as a separate ring of text
+// with a gap of nothing in the middle.
+//
+// One spoke can't have that: the one S and S' have rotated onto. S' is a real
+// circle out at 38.5 and would sit straight on top of a label at 37.5, so that
+// single label keeps the old outer radius and steps over it. Eleven labels
+// close in and one further out looks deliberate, which it is - the far one is
+// exactly where the extra circle is.
+const REF_R = 37.5;
+const REF_R_SA_SPOKE = 47.5;
+
+// Clearances, all satisfied:
+//   ring nodes clear each other  2*pi*27.5/12 = 14.4  vs diameter 11.2
+//   S' clears S                  38.5 - 27.5 = 11.0   vs radii sum 10.2
+//   near labels clear the nodes  37.5 - 2.3 = 35.2    vs node edge 33.1
+//   the Sa-spoke label clears S' 47.5 - 2.3 = 45.2    vs S' edge 43.1
+//   the reference ring clears the box  47.5 + 2.3 = 49.8  <  50
+//
+// A label's clearance is not a radial sum, which is what an earlier version got
+// wrong: it is a horizontal *box* sitting on a spoke, so on a diagonal spoke
+// its inner corner reaches much further in than its centre does. The 2.3 above
+// is that corner's reach - half the height of a two-line name - and it only
+// stayed that small because compound names are set on two lines. On one line
+// ("R2 / G3", 7.5 units wide) the corner came 4.3 units in, which is what used
+// to put it inside the S' circle.
+// The whole wheel is smaller than it was (the ring was 32) to buy the outer
+// band. That band is empty at zero transpose, but the geometry stays fixed
+// either way - a wheel that resized itself the moment you pressed Transpose
+// would be a far worse trade than a slightly smaller one that never moves.
 
 // How far either side of the ring a pointer still counts as "on the rim".
 // This band, split into twelve 30-degree wedges, *is* the hit target - see
-// degreeAtPoint. At the 260px separate-mode size one wedge is ~44px along
-// the ring and ~47px across the band, so every spoke clears the touch
-// guideline without the visible node having to grow (and without the
-// per-node invisible hit box specs/03 sketches, which would only matter if
-// hit-testing were element-based).
-const HIT_BAND = 9;
+// degreeAtPoint. At 380px one wedge is ~55px along the ring and ~61px across
+// the band, so every spoke clears the touch guideline comfortably without the
+// visible node having to grow.
+const HIT_BAND = 8;
 const UPPER_SA_HIT_R = UPPER_SA_NODE_R + 1.5;
 
 // A fast sweep across all twelve spokes would otherwise fire a burst of
@@ -48,48 +78,54 @@ const TONE_MIN_GAP_MS = 55;
 
 // The polygon and the order path are drawn on their own, smaller radius
 // rather than through the node centres. Straight from node to node, any skip
-// of exactly one degree cuts clean through the skipped note's circle (a 60
-// degree chord at r=32 passes within 4.3 of the node between its ends, which
-// is inside that node's 6.5 radius) - so a line near a note was ambiguous
-// about whether that note was in the scale. At r=22 the tightest case, two
-// adjacent pitch classes, clears an unselected node's inner edge by 4.3, and
-// a one-degree skip clears it by 6.4. A short radial tick from each used
-// pitch class's vertex out to its own node is what says "this note is a
-// vertex" - the shape's silhouette is unchanged, only its size. (24 was the
-// first try; the 1.5-unit gap it left was too small for a legible tick.)
-const SHAPE_R = 22;
-const TICK_OUTER_R = 26; // just past the node's inner edge (25.5), so it visibly touches
+// of exactly one degree cuts clean through the skipped note's circle - so a
+// line near a note was ambiguous about whether that note was in the scale. At
+// r=18.5 the tightest case, two adjacent pitch classes, passes 17.9 from the
+// centre against an unselected node's inner edge of 21.9. A short radial tick
+// from each used pitch class's vertex out to its own node is what says "this
+// note is a vertex" - the shape's silhouette is unchanged, only its size.
+const SHAPE_R = 18.5;
+const TICK_OUTER_R = 22.5; // just past the node's inner edge (21.9), so it visibly touches
 
 // Repeated traversals of the same pair of notes are fanned out sideways
 // instead of stacked on one line - see appendOrderPath.
-const LANE_GAP = 1.7;
-const ARROW_LEN = 4.2;
-const ARROW_HALF_WIDTH = 2.4;
+const LANE_GAP = 1.5;
+const ARROW_LEN = 3.6;
+const ARROW_HALF_WIDTH = 2.1;
 
 function nodeRadius(degree) {
   return degree === 12 ? UPPER_SA_NODE_R : RING_NODE_R;
 }
 
-function angleFor(degree) {
-  return (degree % 12) * 30; // degree 12 shares degree 0's spoke
+// Transposing rotates the wheel. `labelOffset` is where Sa now physically
+// sits, in semitones from the original - the same value that slides the
+// Piano's labels along its keys - so the spoke a degree occupies is its own
+// position plus that offset. Sa is at 12 o'clock only at zero transpose;
+// after that the S and S' circles have moved round to the new tonic, which is
+// what makes graha bhēdam legible as a rotation rather than as the note set
+// silently changing underneath a fixed frame.
+//
+// The twelve spoke *positions* never move - only which swara sits on each.
+function angleFor(degree, labelOffset = 0) {
+  return (((degree + labelOffset) % 12) + 12) % 12 * 30; // degree 12 shares degree 0's spoke
 }
 
-// x = 50 + r*sin(theta), y = 53 - r*cos(theta) - y grows downward.
+// x = 50 + r*sin(theta), y = 50 - r*cos(theta) - y grows downward.
 function pointAt(angleDeg, r) {
   const theta = (angleDeg * Math.PI) / 180;
   return { x: CENTRE_X + r * Math.sin(theta), y: CENTRE_Y - r * Math.cos(theta) };
 }
 
-function pointFor(degree) {
-  return pointAt(angleFor(degree), degree === 12 ? UPPER_SA_R : RING_R);
+function pointFor(degree, labelOffset = 0) {
+  return pointAt(angleFor(degree, labelOffset), degree === 12 ? UPPER_SA_R : RING_R);
 }
 
 // A vertex of the shape / a point on the order path: pitch-class space, on
 // the inset radius. S and S' share a point here, deliberately - the shape is
 // the *set of pitches*, and putting the octave repeat at its own radius would
 // give the outline a zero-width spike along the Sa spoke.
-function shapePointFor(degree) {
-  return pointAt(angleFor(degree), SHAPE_R);
+function shapePointFor(degree, labelOffset = 0) {
+  return pointAt(angleFor(degree, labelOffset), SHAPE_R);
 }
 
 // render(container, props) - the shared contract from
@@ -101,7 +137,7 @@ function shapePointFor(degree) {
 // up. `onToggle` is accepted and ignored, the same way Piano and Buttons
 // ignore props they don't use.
 export function render(container, props) {
-  const { selected, list, labelPrefs, order, onReplace, onRemove, onRemoveOrder, descending, summary } = props;
+  const { selected, list, labelPrefs, order, onReplace, summary, insertAt, labelOffset = 0 } = props;
   const orderMode = Boolean(order);
 
   container.className = "wheel-wrap";
@@ -111,25 +147,25 @@ export function render(container, props) {
   root.className = `wheel palette-${SWARA_PALETTE}`;
   container.appendChild(root);
 
-  if (orderMode) appendOrderPath(root, list);
-  else appendShape(root, list);
+  if (orderMode) appendOrderPath(root, list, labelOffset);
+  else appendShape(root, list, labelOffset);
 
   appendCentre(root, summary);
-  const nodesByDegree = appendNodes(root, { selected, labelPrefs, order });
+  const nodesByDegree = appendNodes(root, { selected, labelPrefs, order, labelOffset });
+  appendReferenceRing(root, labelPrefs, labelOffset);
 
-  attachPointerHandlers(root, { selected, list, orderMode, onReplace, nodesByDegree });
+  attachPointerHandlers(root, { selected, list, orderMode, onReplace, nodesByDegree, insertAt, labelOffset });
 
   // Order mode only: the recorded positions live in the shared selection
   // box below, not on the wheel. Numbers on the nodes would stack and
-  // overlap the moment a note repeated - the exact problem that forced
-  // Piano's badge cap - whereas the box has room for as many occurrences as
-  // the phrase actually has. The wheel therefore needs no equivalent of
-  // piano.MAX_VISIBLE_BADGES: a path never runs out of room. Outside order
-  // mode there's nothing for a box to add - the filled nodes and the
-  // polygon already show the selection, and tapping a node removes it.
+  // overlap the moment a note repeated - the problem that eventually cost
+  // the Piano its per-key badges too - whereas the box has room for as many
+  // occurrences as the phrase actually has. Outside order mode there's
+  // nothing for a box to add - the filled nodes and the polygon already show
+  // the selection, and tapping a node removes it.
   if (orderMode) {
     const box = document.createElement("div");
-    renderSelectionBox(box, { list, order: true, onRemove, onRemoveOrder, labelPrefs, descending });
+    renderSelectionBox(box, { ...props, order: true });
     container.appendChild(box);
   }
 }
@@ -152,10 +188,11 @@ function svgLayer(className) {
 // on the inset shape. Without them the shape floats free of the ring and
 // nothing says which notes its corners belong to; with them, a line running
 // *past* a node and a line *ending at* one look completely different.
-function appendTicks(svg, pitchClasses) {
+function appendTicks(svg, pitchClasses, labelOffset) {
   for (const pc of pitchClasses) {
-    const inner = pointAt(pc * 30, SHAPE_R);
-    const outer = pointAt(pc * 30, TICK_OUTER_R);
+    const angle = angleFor(pc, labelOffset);
+    const inner = pointAt(angle, SHAPE_R);
+    const outer = pointAt(angle, TICK_OUTER_R);
     svg.appendChild(svgEl("line", { class: "wheel-tick", x1: inner.x, y1: inner.y, x2: outer.x, y2: outer.y }));
   }
 }
@@ -166,19 +203,24 @@ function appendTicks(svg, pitchClasses) {
 // the circle, the fill genuinely runs through the colours of the notes
 // chosen. Drawn over distinct pitch classes on the inset radius - see
 // SHAPE_R for why it isn't drawn through the node centres.
-function appendShape(root, list) {
+function appendShape(root, list, labelOffset) {
   const pcs = [...new Set(list.map((d) => d % 12))].sort((a, b) => a - b);
   if (pcs.length === 0) return;
 
   const ticks = svgLayer("wheel-path wheel-ticks");
-  appendTicks(ticks, pcs);
+  appendTicks(ticks, pcs, labelOffset);
   root.appendChild(ticks);
 
   if (pcs.length < 3) return; // fewer than three points is a line, not a shape
 
-  const points = pcs.map((pc) => pointAt(pc * 30, SHAPE_R));
-  const first = swaraColor(pcs[0]);
-  const stops = [`${first} 0deg`, ...pcs.map((pc) => `${swaraColor(pc)} ${pc * 30}deg`), `${first} 360deg`];
+  // Ordered by the spoke each pitch class currently occupies, not by degree -
+  // once the wheel is rotated those are different orders, and a conic
+  // gradient's stops have to run round the circle monotonically or the fill
+  // doubles back on itself.
+  const placed = pcs.map((pc) => ({ pc, angle: angleFor(pc, labelOffset) })).sort((a, b) => a.angle - b.angle);
+  const points = placed.map(({ angle }) => pointAt(angle, SHAPE_R));
+  const first = swaraColor(placed[0].pc);
+  const stops = [`${first} 0deg`, ...placed.map(({ pc, angle }) => `${swaraColor(pc)} ${angle}deg`), `${first} 360deg`];
 
   const shape = document.createElement("div");
   shape.className = "wheel-shape";
@@ -215,10 +257,10 @@ function laneOffset(index) {
 // Drawn in pitch-class space like the polygon, so S and S' share a point: an
 // ascending scale then closes its own circle, and a step to the upper Sa is a
 // zero-length segment, skipped.
-function appendOrderPath(root, list) {
+function appendOrderPath(root, list, labelOffset) {
   const pcs = [...new Set(list.map((d) => d % 12))].sort((a, b) => a - b);
   const svg = svgLayer("wheel-path");
-  appendTicks(svg, pcs);
+  appendTicks(svg, pcs, labelOffset);
 
   const lanes = new Map();
   const segments = [];
@@ -233,8 +275,8 @@ function appendOrderPath(root, list) {
   }
 
   for (const { from, to, lane } of segments) {
-    const a = shapePointFor(from);
-    const b = shapePointFor(to);
+    const a = shapePointFor(from, labelOffset);
+    const b = shapePointFor(to, labelOffset);
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const len = Math.hypot(dx, dy);
@@ -276,8 +318,8 @@ function appendOrderPath(root, list) {
   }
 
   if (list.length > 0) {
-    const start = shapePointFor(list[0]);
-    const end = shapePointFor(list[list.length - 1]);
+    const start = shapePointFor(list[0], labelOffset);
+    const end = shapePointFor(list[list.length - 1], labelOffset);
     svg.appendChild(svgEl("circle", { class: "wheel-path-start", cx: start.x, cy: start.y, r: 2.1 }));
     svg.appendChild(svgEl("circle", { class: "wheel-path-end", cx: end.x, cy: end.y, r: 1.6 }));
   }
@@ -315,11 +357,11 @@ function appendCentre(root, summary) {
 
 // --- Nodes --------------------------------------------------------------
 
-function appendNodes(root, { selected, labelPrefs, order }) {
+function appendNodes(root, { selected, labelPrefs, order, labelOffset }) {
   const nodesByDegree = new Map();
 
   for (const degree of DEGREES) {
-    const { x, y } = pointFor(degree);
+    const { x, y } = pointFor(degree, labelOffset);
     const r = nodeRadius(degree);
     const isSelected = selected.has(degree);
 
@@ -360,6 +402,46 @@ function appendNodes(root, { selected, labelPrefs, order }) {
   return nodesByDegree;
 }
 
+// --- Reference ring -----------------------------------------------------
+
+// The swara that sat on each spoke *before* the transpose, dulled, just outside
+// the note circles. Once the wheel rotates, the spoke at 12 o'clock is no longer
+// Sa, and without this there is nothing left on screen tying the new arrangement
+// to the one it came from - which is exactly what graha bhēdam is about. Reading
+// a spoke outward gives "this note is now G2; it used to be P", and the two now
+// sit close enough together to be read as one phrase.
+//
+// Only drawn while transposed. At zero offset it would restate the note
+// circles it encloses, word for word.
+function appendReferenceRing(root, labelPrefs, labelOffset) {
+  if (!labelOffset) return;
+
+  const ring = document.createElement("div");
+  ring.className = "wheel-ref-ring";
+  ring.setAttribute("aria-hidden", "true"); // the nodes already name every swara
+
+  // Whichever spoke S and S' have rotated onto - the one label that has to
+  // stand off further, since S' is a real circle in its way. See REF_R.
+  const saSpoke = (((labelOffset % 12) + 12) % 12);
+
+  for (let pc = 0; pc < 12; pc++) {
+    const { x, y } = pointAt(pc * 30, pc === saSpoke ? REF_R_SA_SPOKE : REF_R);
+    const label = document.createElement("span");
+    label.className = "wheel-ref-label";
+    label.style.left = `${x}%`;
+    label.style.top = `${y}%`;
+    // A compound name stacks, the way the node it echoes does - and in the same
+    // order, higher swara on top, since stackReferenceLabel is what the Piano's
+    // annotations use too. It was one wide line here originally, to keep a
+    // reference mark from competing with a real label, but that width is
+    // exactly what S' collided with (see the clearance note above).
+    // .wheel-ref-label is white-space: pre-line, so the newline breaks.
+    label.textContent = stackReferenceLabel(labelForDegree(pc, labelPrefs));
+    ring.appendChild(label);
+  }
+  root.appendChild(ring);
+}
+
 // --- Tap and sweep ------------------------------------------------------
 
 let lastToneAt = 0;
@@ -377,12 +459,12 @@ function playTone(degree) {
 // would not - so a sweep never drops a note just because the finger passed
 // between two circles. S' is off the ring entirely, so it gets its own
 // circular test first; nothing else lives out at that radius.
-function degreeAtPoint(root, event) {
+function degreeAtPoint(root, event, labelOffset) {
   const rect = root.getBoundingClientRect();
   const x = ((event.clientX - rect.left) / rect.width) * 100;
   const y = ((event.clientY - rect.top) / rect.height) * 100;
 
-  const upper = pointFor(12);
+  const upper = pointFor(12, labelOffset);
   if (Math.hypot(x - upper.x, y - upper.y) <= UPPER_SA_HIT_R) return 12;
 
   const dx = x - CENTRE_X;
@@ -392,11 +474,23 @@ function degreeAtPoint(root, event) {
 
   let angle = (Math.atan2(dx, -dy) * 180) / Math.PI; // clockwise from 12 o'clock
   if (angle < 0) angle += 360;
-  return Math.round(angle / 30) % 12;
+  // Which spoke was hit, then which degree currently sits on it - the inverse
+  // of angleFor, so the hit test rotates with the wheel.
+  const spoke = Math.round(angle / 30) % 12;
+  return (((spoke - labelOffset) % 12) + 12) % 12;
 }
 
-function attachPointerHandlers(root, { selected, list, orderMode, onReplace, nodesByDegree }) {
+function attachPointerHandlers(root, { selected, list, orderMode, onReplace, nodesByDegree, insertAt, labelOffset }) {
   if (typeof onReplace !== "function") return;
+
+  // Where new swaras land. Ordinarily the end; in order mode the selection
+  // tray's caret can point somewhere inside the phrase instead, and a sweep
+  // then goes in as a run at that point rather than being reversed into it
+  // one note at a time.
+  const place = (additions) => {
+    if (!orderMode || insertAt === null || insertAt === undefined || insertAt > list.length) return [...list, ...additions];
+    return [...list.slice(0, insertAt), ...additions, ...list.slice(insertAt)];
+  };
 
   // A tap adds and plays, or removes silently - the same rule every other
   // input style follows. In order mode a tap always appends another
@@ -406,21 +500,21 @@ function attachPointerHandlers(root, { selected, list, orderMode, onReplace, nod
       onReplace(list.filter((d) => d !== degree));
       return;
     }
-    onReplace([...list, degree]);
+    onReplace(place([degree]));
   }
 
   // A sweep **only adds**. Never deselect by dragging: an accidental sweep
   // that wipes a selection is far worse than one that adds a note too many.
   function commitRun(entered) {
-    const next = [...list];
+    const additions = [];
     const have = new Set(list);
     for (const degree of entered) {
       if (!orderMode && have.has(degree)) continue;
-      next.push(degree);
+      additions.push(degree);
       have.add(degree);
     }
-    if (next.length === list.length) return; // nothing new - don't churn a re-render
-    onReplace(next);
+    if (additions.length === 0) return; // nothing new - don't churn a re-render
+    onReplace(place(additions));
   }
 
   root.addEventListener("wheel-tap", (e) => commitTap(e.detail));
@@ -451,7 +545,7 @@ function attachPointerHandlers(root, { selected, list, orderMode, onReplace, nod
   root.addEventListener("pointerdown", (e) => {
     if (sweep) return;
     if (e.target.closest(".wheel-centre")) return; // the summary button takes its own taps
-    const degree = degreeAtPoint(root, e);
+    const degree = degreeAtPoint(root, e, labelOffset);
     if (degree === null) return;
     e.preventDefault();
     // So the gesture survives leaving a node's box. Guarded: capture throws
@@ -470,7 +564,7 @@ function attachPointerHandlers(root, { selected, list, orderMode, onReplace, nod
 
   root.addEventListener("pointermove", (e) => {
     if (!sweep || e.pointerId !== sweep.pointerId) return;
-    const degree = degreeAtPoint(root, e);
+    const degree = degreeAtPoint(root, e, labelOffset);
     if (degree === null) return; // drifting off the rim pauses the sweep, it doesn't end it
     enter(degree);
   });

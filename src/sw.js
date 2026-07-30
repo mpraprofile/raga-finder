@@ -10,7 +10,7 @@
 // out of. Network-first means anyone with connectivity always gets
 // current content; the cache exists purely for when they don't have any.
 
-const CACHE_NAME = "raga-finder-v2"; // bump whenever the precache list below changes
+const CACHE_NAME = "raga-finder-v5"; // bump whenever the precache list below changes
 
 const PRECACHE_URLS = [
   "./index.html",
@@ -28,9 +28,21 @@ const PRECACHE_URLS = [
   "./js/inputs/piano.js",
   "./js/inputs/buttons.js",
   "./js/inputs/wheel.js",
+  // Bundled font subsets. These used to be one <link> to fonts.googleapis.com,
+  // which the service worker could not cache at all (see the fetch handler's
+  // same-origin rule) - so the "decorative font degrades offline" caveat that
+  // used to live here is simply gone: both faces are ours now.
+  "./fonts/gentium-book-plus-swara.woff2",
+  "./fonts/forum-headings.woff2",
   "../data/ragas.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
+  // Not decoration: this one is the search button's entire glyph, painted as a
+  // CSS mask. Without it precached, an offline cold start shows a blank button.
+  "./icons/search-icon.png",
+  // Same reasoning - this one is the page's own title (see .app-title), so
+  // without it an offline cold start opens on the alt text.
+  "./icons/logo-title.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -53,11 +65,10 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  // Only same-origin GETs (our own app files) go through the cache -
-  // cross-origin requests (the Forum Google Font) are left to the browser's
-  // own normal handling, since falling back to the system font if that
-  // ever fails offline is already an accepted, graceful degradation (see
-  // "Visual design").
+  // Only same-origin GETs go through the cache. As of the font bundling there
+  // are no cross-origin requests left to speak of - this guard now just keeps
+  // the worker out of the way of anything a browser extension or the page
+  // might add later.
   if (event.request.method !== "GET" || url.origin !== self.location.origin) return;
 
   event.respondWith(

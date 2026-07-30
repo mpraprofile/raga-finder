@@ -9,10 +9,12 @@ import {
   grahaTonic,
   rotateToTonic,
   searchByName,
+  buildNameIndex,
+  isExactNameMatch,
   relatedByMela,
 } from "./ragas.js";
-import { playPianoTone, playBlockerSound, setMuted } from "./audio.js";
-import { REFERENCE_ROWS, referenceRowCode, renumberLabel } from "./notation.js";
+import { playPianoTone, setMuted } from "./audio.js";
+import { REFERENCE_ROWS, referenceRowCode, noteLabel } from "./notation.js";
 import * as piano from "./inputs/piano.js";
 import * as buttons from "./inputs/buttons.js";
 import * as wheel from "./inputs/wheel.js";
@@ -56,9 +58,19 @@ const transposeState = {
 };
 
 const EMPTY_PROMPT = "Select some swaras to find matching ragas.";
+
+// "Record note order" only: where the next swara pressed should land. null
+// means append, which is the ordinary case. Set by tapping a gap in the
+// selection tray, and advanced by one on each insert so a run of swaras goes
+// in as a run rather than in reverse. Cleared whenever the sequence it
+// pointed into stops existing.
+let insertAt = null;
 let muted = false;
 let ragas = [];
 let melaNames = new Map(); // mela number -> that melakarta's name, filled after load
+// Folded name forms for the search view, built once after load - see
+// buildNameIndex() in ragas.js.
+let nameIndex = [];
 const labelPrefs = { gandhara: "alt", nishada: "alt" };
 
 // Insertion-ordered arrays, not Sets - order is always tracked (cheap), and
@@ -103,11 +115,15 @@ const avarohanaLoopToggle = document.getElementById("avarohana-loop-toggle");
 const avarohanaResetBtn = document.getElementById("avarohana-reset-btn");
 
 const mainView = document.getElementById("main-view");
+const settingsView = document.getElementById("settings-view");
+const settingsOpenBtn = document.getElementById("settings-open-btn");
+const settingsBackBtn = document.getElementById("settings-back-btn");
 const searchView = document.getElementById("search-view");
 const searchOpenBtn = document.getElementById("search-open-btn");
 const searchBackBtn = document.getElementById("search-back-btn");
 const ragaSearchInput = document.getElementById("raga-search-input");
-const ragaNamesDatalist = document.getElementById("raga-names-datalist");
+const suggestToggleBtn = document.getElementById("raga-suggest-toggle");
+const suggestListEl = document.getElementById("raga-suggestions");
 const searchPromptEl = document.getElementById("search-prompt");
 const searchResultsEl = document.getElementById("search-results");
 
@@ -121,26 +137,21 @@ function toggleInList(list, degree) {
   }
 }
 
-function countOccurrences(list, degree) {
-  return list.reduce((n, d) => (d === degree ? n + 1 : n), 0);
-}
-
 // In Record note order mode, a note can recur (vakra ragas repeat notes
 // within a scale), so re-tapping an already-selected note appends another
 // occurrence instead of deselecting it - Reset is the only way to clear.
 // Outside order mode, keep the plain select/deselect toggle.
 //
-// Piano-only functional cap: piano.MAX_VISIBLE_BADGES (5) is also the most
-// occurrences one note can be recorded - not just how many badges show
-// (see piano.js). Past the cap, a tap neither records a new occurrence nor
-// plays the note's own tone; it plays a distinct "blocked" sound instead,
-// so it's audibly obvious the tap did nothing rather than a silent no-op.
-// Buttons has no such cap - only Piano's badge stack has the space problem
-// this is guarding against.
+// No per-note repeat cap. Piano used to stop at five occurrences of one swara
+// and refuse further taps with a "blocked" sound, but that limit only ever
+// existed because a key's badge stack had to fit inside the key. With the
+// badges gone and the tray carrying the order for every style, the limit had
+// nothing left to protect and made Piano behave differently from the wheel and
+// Buttons for no reason a user could see.
 //
-// Returns whether the selection actually changed, so a refused tap (the cap)
-// or a deliberately inert one (free play) doesn't drag a re-render - and,
-// more to the point, doesn't restart a sequence that's currently playing.
+// Returns whether the selection actually changed, so a deliberately inert tap
+// (free play) doesn't drag a re-render - and, more to the point, doesn't
+// restart a sequence that's currently playing.
 function addOrToggle(list, degree) {
   // Free play (Piano only): sound the note and change nothing. Every key
   // speaks, including one that's already selected - there's no "deselect"
@@ -150,16 +161,42 @@ function addOrToggle(list, degree) {
     return false;
   }
   if (orderMode) {
-    if (inputStyle === "piano" && countOccurrences(list, degree) >= piano.MAX_VISIBLE_BADGES) {
-      playBlockerSound();
-      return false;
-    }
-    list.push(degree);
+    insertDegree(list, degree);
     playPianoTone(degree);
   } else {
     toggleInList(list, degree);
   }
   return true;
+}
+
+// Appends, unless the caret says otherwise. Advancing the caret past what it
+// just placed is what makes a run of swaras go in as a run: press M1 then G2
+// with the caret at 3 and you get ... M1 G2 ..., not ... G2 M1 ....
+function insertDegree(list, degree) {
+  if (insertAt === null || insertAt > list.length) {
+    list.push(degree);
+    return;
+  }
+  list.splice(insertAt, 0, degree);
+  insertAt += 1;
+}
+
+// The caret indexes into one specific recorded sequence, so it can't outlive
+// that sequence: switching direction, clearing, leaving order mode, or the
+// list shrinking past it all make it meaningless.
+function clearInsertPoint() {
+  insertAt = null;
+}
+
+// Removing an element before the caret shifts everything after it down by one.
+function insertPointAfterRemoval(position) {
+  if (insertAt === null) return;
+  if (position - 1 < insertAt) insertAt -= 1;
+}
+
+function moveInList(list, from, to) {
+  const [item] = list.splice(from, 1);
+  list.splice(to > from ? to - 1 : to, 0, item);
 }
 
 // Assembler-only: its palette stays permanently populated (see
@@ -184,6 +221,7 @@ function removeOneOccurrence(list, degree) {
 // this, regardless of input style. Silent, same as any other deselect.
 function removeAtPosition(list, position) {
   list.splice(position - 1, 1);
+  insertPointAfterRemoval(position);
 }
 
 // Map<degree, number[]> of every 1-based click position for that degree -
@@ -199,7 +237,7 @@ function orderMapFor(list) {
   return map;
 }
 
-// Replaces the entire selection in one go - graha bhedam rotation and
+// Replaces the entire selection in one go - graha bhēdam rotation and
 // sweep-select (see specs/03-swara-wheel.md) both change every note at
 // once, which none of the existing per-note callbacks can express. Follows
 // the same pattern as the rest: mutate the list in place (it's the live
@@ -210,7 +248,14 @@ function replaceList(list, newList) {
   list.splice(0, list.length, ...newList);
 }
 
-// --- Transpose (graha bhedam) -------------------------------------------
+// The wheel builds its own new list (it owns tap and sweep alike), so the
+// caret is advanced here from how much longer the list got rather than by the
+// insert helper. Only order mode has a caret at all.
+function advanceInsertPoint(added) {
+  if (orderMode && insertAt !== null && added > 0) insertAt += added;
+}
+
+// --- Transpose (graha bhēdam) -------------------------------------------
 // One row per block, under that block's Play/Loop controls (see index.html),
 // so it belongs to the *selection* rather than to any one input style - which
 // is what lets Piano have it too.
@@ -308,11 +353,28 @@ function inFreePlayMode() {
   return freePlay && inputStyle === "piano";
 }
 
+// The tray-editing props (see renderSelectionBox): a caret position, a way to
+// move it, and a way to reorder. Handed to whichever direction owns the tray.
+function trayEditingProps(list, restart) {
+  return {
+    insertAt,
+    onInsertAtChange: (index) => {
+      insertAt = index;
+      renderInputs();
+    },
+    onReorder: (from, to) => {
+      moveInList(list, from, to);
+      clearInsertPoint();
+      restart();
+      renderInputs();
+      renderResults();
+    },
+  };
+}
+
 function renderInputs() {
   const renderer = INPUT_RENDERERS[inputStyle];
   renderTransposeRows();
-  // Piano's two directions stack; a keyboard is far too wide to halve.
-  separateContainer.classList.toggle("stacked", inputStyle === "piano");
 
   if (layoutMode === "combined" || inFreePlayMode()) {
     renderer.render(combinedContainer, {
@@ -324,10 +386,12 @@ function renderInputs() {
       // mode both wheels would show the same text (matchSeparate returns
       // one joint result list for both directions), which reads as a bug
       // rather than as information.
-      summary: selectionSummary(),
+      summary: exactMatchSummary(currentMatches().exact),
       labelOffset: transposeState.combined.offset,
+      ...trayEditingProps(combined, () => restartIfPlaying(combinedPlayer)),
       freePlay: inFreePlayMode(),
       onReplace: (newList) => {
+        advanceInsertPoint(newList.length - combined.length);
         replaceList(combined, newList);
         restartIfPlaying(combinedPlayer);
         renderInputs();
@@ -365,7 +429,10 @@ function renderInputs() {
       labelPrefs,
       order: orderMapFor(arohanaSel),
       labelOffset: transposeState.arohana.offset,
+      summary: exactMatchSummary(directionMatches(arohanaSel, "arohana")),
+      ...trayEditingProps(arohanaSel, restartSeparatePlayers),
       onReplace: (newList) => {
+        advanceInsertPoint(newList.length - arohanaSel.length);
         replaceList(arohanaSel, newList);
         restartSeparatePlayers();
         renderInputs();
@@ -403,7 +470,10 @@ function renderInputs() {
       order: orderMapFor(avarohanaSel),
       descending: true,
       labelOffset: transposeState.avarohana.offset,
+      summary: exactMatchSummary(directionMatches(avarohanaSel, "avarohana")),
+      ...trayEditingProps(avarohanaSel, restartSeparatePlayers),
       onReplace: (newList) => {
+        advanceInsertPoint(newList.length - avarohanaSel.length);
         replaceList(avarohanaSel, newList);
         restartSeparatePlayers();
         renderInputs();
@@ -452,18 +522,30 @@ function currentMatches() {
   return layoutMode === "combined" ? match(ragas, new Set(combined)) : matchSeparate(ragas, new Set(arohanaSel), new Set(avarohanaSel));
 }
 
-// One line of live result summary for the hole in the middle of the swara
-// wheel (see specs/03-swara-wheel.md): the top exact match's name and the
-// two counts, with a way to hear that raga. Other input styles ignore it.
-function selectionSummary() {
-  if (!hasSelection()) return { text: "Pick some swaras", onPlay: null };
-  const { exact, contains } = currentMatches();
-  const counts = `${exact.length} exact · ${contains.length} contain`;
+// What sits in the hole in the middle of the swara wheel: the name of the
+// raga you've landed on, and nothing else. Only an *exact* match earns the
+// space - a count of near-misses is list-shaped information that belongs in
+// the list (see countsRow), and a running tally in the middle of the wheel
+// churned on every tap while saying nothing about the shape being drawn
+// around it. No exact match means an empty centre, which is itself the
+// answer. Other input styles ignore this prop.
+function exactMatchSummary(exact) {
   const top = exact[0] ?? null;
-  return {
-    text: top ? `${top.name} · ${counts}` : `No exact match · ${counts}`,
-    onPlay: top ? () => playScaleOnce(top) : null,
-  };
+  if (!top) return null;
+  return { text: top.name, onPlay: () => playScaleOnce(top) };
+}
+
+// Separate mode gives each wheel its own centre, answering for its own
+// direction rather than both showing the same joint result. Constraining one
+// direction and leaving the other unconstrained is exactly what matchSeparate
+// already does with an empty set, so "exact" here means "this raga's arohana
+// is precisely these swaras" - which is the question that wheel is asking.
+function directionMatches(list, direction) {
+  if (list.length === 0 || ragas.length === 0) return [];
+  const pressed = new Set(list);
+  const empty = new Set();
+  const { exact } = direction === "arohana" ? matchSeparate(ragas, pressed, empty) : matchSeparate(ragas, empty, pressed);
+  return exact;
 }
 
 function renderResults() {
@@ -487,13 +569,28 @@ function renderResults() {
 
   const { exact, contains } = currentMatches();
 
-  const matched = currentMatchedSets();
-  for (const raga of exact) resultsEl.appendChild(renderRow(raga, "exact", matched));
-  for (const raga of contains) resultsEl.appendChild(renderRow(raga, null, matched));
-
   if (exact.length === 0 && contains.length === 0) {
-    resultsEl.appendChild(emptyRow("No ragas match this note set."));
+    resultsEl.appendChild(emptyRow("No ragas match this swara set."));
+    return;
   }
+
+  const matched = currentMatchedSets();
+  resultsEl.appendChild(countsRow(exact.length, contains.length));
+  for (const raga of exact) resultsEl.appendChild(renderRow(raga, { text: "exact", tier: "exact" }, matched));
+  for (const raga of contains) resultsEl.appendChild(renderRow(raga, null, matched));
+}
+
+// The tallies that used to sit in the middle of the wheel. They belong here:
+// they describe the list, they change on every keystroke, and the hole in the
+// wheel is far too small a place to read a running count in. What stays in
+// the wheel is the one thing worth glancing at mid-selection - the name of
+// the raga you've actually landed on.
+function countsRow(exactCount, containsCount) {
+  const li = document.createElement("li");
+  li.className = "results-counts";
+  const exactText = `${exactCount} exact ${exactCount === 1 ? "match" : "matches"}`;
+  li.textContent = containsCount > 0 ? `${exactText} · ${containsCount} also contain these swaras` : exactText;
+  return li;
 }
 
 function renderOrderedResults() {
@@ -507,24 +604,36 @@ function renderOrderedResults() {
   const { exact, contains } = currentMatches();
 
   if (exact.length === 0 && contains.length === 0) {
-    resultsEl.appendChild(emptyRow("No ragas match this note order, even partially."));
+    resultsEl.appendChild(emptyRow("No ragas match this swara order, even partially."));
     return;
   }
 
   const matched = currentMatchedSets();
-  for (const raga of exact) resultsEl.appendChild(renderRow(raga, orderBadgeText(raga, "exact order"), matched, true));
-  for (const raga of contains) resultsEl.appendChild(renderRow(raga, orderBadgeText(raga, "partial order"), matched, false));
+  resultsEl.appendChild(countsRow(exact.length, contains.length));
+  for (const raga of exact) resultsEl.appendChild(renderRow(raga, orderBadge(raga, "exact"), matched, true));
+  for (const raga of contains) resultsEl.appendChild(renderRow(raga, orderBadge(raga, "partial"), matched, false));
 }
 
 // Both matchOrdered() and matchOrderedSeparate() annotate matchedArohana/
 // matchedAvarohana on every returned raga, so this same suffix logic
-// produces a consistent badge shape ("exact order (arohana)", "partial
-// order (both)", ...) regardless of combined vs. separate layout mode.
-function orderBadgeText(raga, tier) {
-  if (raga.matchedArohana && raga.matchedAvarohana) return `${tier} (both)`;
-  if (raga.matchedArohana) return `${tier} (arohana)`;
-  if (raga.matchedAvarohana) return `${tier} (avarohana)`;
-  return tier;
+// produces a consistent badge shape ("exact (arohana)", "partial (both)",
+// ...) regardless of combined vs. separate layout mode.
+//
+// `tier` is also the badge's *colour*, which is the whole point: green means
+// exact and nothing else. Order mode used to hand "partial order (arohana)"
+// the identical green that "exact" wears everywhere else, so the one visual
+// cue that's supposed to mean "this is precisely what you asked for" was
+// being spent on rows that only partly matched.
+function orderBadge(raga, tier) {
+  const suffix =
+    raga.matchedArohana && raga.matchedAvarohana
+      ? " (both)"
+      : raga.matchedArohana
+        ? " (arohana)"
+        : raga.matchedAvarohana
+          ? " (avarohana)"
+          : "";
+  return { text: tier + suffix, tier };
 }
 
 // The notes the user has actually pressed, for highlighting them within
@@ -553,17 +662,23 @@ function emptyRow(text) {
 function scaleHtml(notes, matchedDegrees) {
   return notes
     .map((n) => {
-      const label = renumberLabel(n.label, labelPrefs);
-      return matchedDegrees.has(n.degree) ? `<span class="note-match">${label}</span>` : label;
+      // Every label is wrapped, matched or not: `swara-code` is what carries
+      // the swara face, and the "Arohana:" prose around these must not get it.
+      const cls = matchedDegrees.has(n.degree) ? "swara-code note-match" : "swara-code";
+      return `<span class="${cls}">${noteLabel(n, labelPrefs)}</span>`;
     })
     .join(" ");
 }
 
-// `tint` controls the visual "exact match" highlight independently of
-// whether there's a badge - a partial/contains order-mode match still
-// shows a badge ("partial order...") but shouldn't be tinted the same as
-// a true exact match, so it stays visually distinct from the top tier.
-function renderRow(raga, badgeText, matched, tint = Boolean(badgeText)) {
+// `badge` is `{ text, tier }` or null. `tier` picks the colour and is the
+// only thing that may turn a badge green: "exact" is green, anything else is
+// muted. `tint` controls the row's own background highlight independently -
+// a partial order-mode match carries a badge but shouldn't be tinted like a
+// true exact match. `loadable` adds the "Load swaras" button; only the name
+// search passes it (see loadRagaIntoKeyboard) - in the note-based results the
+// selection is the thing you just built by hand, and a button that silently
+// replaced it with a neighbouring raga's scale would be a trap.
+function renderRow(raga, badge, matched, tint = Boolean(badge && badge.tier === "exact"), { loadable = false } = {}) {
   const li = document.createElement("li");
   li.className = "result-row" + (tint ? " exact" : "");
 
@@ -604,11 +719,11 @@ function renderRow(raga, badgeText, matched, tint = Boolean(badgeText)) {
     melaBadge.textContent = "melakarta";
     name.appendChild(melaBadge);
   }
-  if (badgeText) {
-    const badge = document.createElement("span");
-    badge.className = "badge";
-    badge.textContent = badgeText;
-    name.appendChild(badge);
+  if (badge) {
+    const el = document.createElement("span");
+    el.className = `badge badge-${badge.tier}`;
+    el.textContent = badge.text;
+    name.appendChild(el);
   }
 
   const mela = document.createElement("span");
@@ -622,6 +737,7 @@ function renderRow(raga, badgeText, matched, tint = Boolean(badgeText)) {
   li.appendChild(playBtn);
   li.appendChild(name);
   li.appendChild(mela);
+  if (loadable) li.appendChild(loadButton(raga));
   li.appendChild(scales);
   return li;
 }
@@ -642,13 +758,18 @@ function noMatchedSets() {
   return { arohana: new Set(), avarohana: new Set() };
 }
 
-// Raga names repeat across the dataset (see relatedByMela's own note on
-// this) - de-duplicated here since the datalist is suggesting *names* to
-// type, not picking a specific raga; the search box's own tiered ranking
-// is what actually disambiguates once you've typed enough to match.
-function populateRagaNamesDatalist() {
-  const names = [...new Set(ragas.map((r) => r.name))].sort((a, b) => a.localeCompare(b));
-  ragaNamesDatalist.innerHTML = names.map((name) => `<option value="${name}"></option>`).join("");
+// Ranking is pure and depends on nothing but the query, so the one search a
+// keystroke needs is shared by the results list and the suggestion dropdown
+// rather than run twice.
+let lastSearchQuery = null;
+let lastSearchMatches = [];
+
+function matchesFor(query) {
+  if (query !== lastSearchQuery) {
+    lastSearchQuery = query;
+    lastSearchMatches = searchByName(nameIndex, query);
+  }
+  return lastSearchMatches;
 }
 
 function performRagaSearch() {
@@ -662,21 +783,22 @@ function performRagaSearch() {
   }
   searchPromptEl.hidden = true;
 
-  const matches = searchByName(ragas, query);
+  const matches = matchesFor(query);
   if (matches.length === 0) {
-    searchResultsEl.appendChild(emptyRow(`No ragas match "${query.trim()}".`));
+    searchResultsEl.appendChild(emptyRow(`No ragas match "${query.trim()}", even approximately.`));
     return;
   }
 
   const empty = noMatchedSets();
   const top = matches[0];
-  // "Clear match" per the human's spec: an exact (case-insensitive) name
-  // match tops the list - already true from searchByName()'s own tier-0
-  // sort, so this only decides whether to badge it as such.
-  const isClearMatch = top.name.toLowerCase() === query.trim().toLowerCase();
+  // "Clear match" per the human's spec: an exact name match tops the list -
+  // already true from searchByName()'s own tier-0 sort, so this only decides
+  // whether to badge it as such. Exactness is judged on the folded forms
+  // (see isExactNameMatch), so "Thodi" counts as naming Todi outright.
+  const isClearMatch = isExactNameMatch(top, query);
   matches.forEach((raga, i) => {
-    const badge = i === 0 && isClearMatch ? "exact match" : null;
-    searchResultsEl.appendChild(renderRow(raga, badge, empty, Boolean(badge)));
+    const badge = i === 0 && isClearMatch ? { text: "exact name", tier: "exact" } : null;
+    searchResultsEl.appendChild(renderRow(raga, badge, empty, Boolean(badge), { loadable: true }));
   });
 
   // Related ragas: everything else sharing the top match's parent mela
@@ -690,18 +812,283 @@ function performRagaSearch() {
     heading.textContent = `Related ragas - same parent scale as ${top.name} (${melaContext(top, melaNames)})`;
     searchResultsEl.appendChild(heading);
     for (const raga of related) {
-      searchResultsEl.appendChild(renderRow(raga, null, empty, false));
+      searchResultsEl.appendChild(renderRow(raga, null, empty, false, { loadable: true }));
     }
   }
 }
 
-ragaSearchInput.addEventListener("input", performRagaSearch);
+// --- Loading a found raga onto the keyboard -------------------------------
+// The way back from "I know its name" to the note-based finder: take the
+// raga's own scale, put it in the input widget, and go there.
+
+// Whether a raga's avarohana is just its arohana read backwards - which is
+// exactly the question of which layout mode can hold it without losing
+// anything. If it is, one combined selection says everything there is to
+// say. If it isn't (a vakra turn, or a note used in only one direction),
+// the two directions have to be kept apart, and that is what separate mode
+// is for.
+function isSymmetricScale(raga) {
+  const aro = raga.arohana.map((n) => n.degree);
+  const ava = raga.avarohana.map((n) => n.degree);
+  if (aro.length !== ava.length) return false;
+  return aro.every((degree, i) => degree === ava[ava.length - 1 - i]);
+}
+
+// Order mode records a sequence, so repeats and order are the point and the
+// stored scale goes in untouched. Outside it a selection is a set, so a vakra
+// scale's repeated note would otherwise arrive as two selections of one note.
+function selectionFrom(degrees) {
+  return orderMode ? degrees : [...new Set(degrees)];
+}
+
+function loadRagaIntoKeyboard(raga) {
+  stopAllPlayback();
+  clearInsertPoint();
+  // Free play freezes the selection and hides the results entirely, so a
+  // scale loaded into it would land somewhere invisible. Asking for a
+  // specific raga's swaras is the stronger intent, so it wins.
+  if (freePlay) {
+    freePlay = false;
+    freePlayToggle.checked = false;
+  }
+
+  layoutMode = isSymmetricScale(raga) ? "combined" : "separate";
+  const aro = raga.arohana.map((n) => n.degree);
+  if (layoutMode === "combined") {
+    replaceList(combined, selectionFrom(aro));
+    transposeState.combined = { steps: 0, offset: 0 };
+  } else {
+    replaceList(arohanaSel, selectionFrom(aro));
+    replaceList(avarohanaSel, selectionFrom(raga.avarohana.map((n) => n.degree)));
+    transposeState.arohana = { steps: 0, offset: 0 };
+    transposeState.avarohana = { steps: 0, offset: 0 };
+  }
+  // The Layout radio is the control of record for layoutMode everywhere else
+  // in the app, so it has to be brought along or the page would contradict
+  // itself about which mode it is in.
+  document.querySelector(`input[name="layout-mode"][value="${layoutMode}"]`).checked = true;
+
+  updateLayoutVisibility();
+  renderInputs();
+  renderResults();
+  closeSearchView();
+  // The search results are a long list and the loaded scale is at the top of
+  // the page it just swapped to.
+  window.scrollTo({ top: 0 });
+}
+
+function loadButton(raga) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "result-load-btn";
+  btn.textContent = "Load swaras";
+  btn.title = isSymmetricScale(raga)
+    ? `Put ${raga.name}'s swaras on the keyboard (combined - its avarohana is its arohana reversed)`
+    : `Put ${raga.name}'s swaras on the keyboard (separate arohana/avarohana - they differ)`;
+  btn.addEventListener("click", () => loadRagaIntoKeyboard(raga));
+  return btn;
+}
+
+// --- Name suggestions: the combobox dropdown -----------------------------
+// Our own listbox, not a native <datalist> - see index.html for why. Two
+// things fill it: the ranked matches for whatever has been typed, and (from
+// the drop-arrow) the full list of every name in the dataset, which is the
+// one thing the ranked view can't offer, since it needs a query first.
+
+const SUGGESTION_LIMIT = 12;
+
+// Names repeat across the dataset (several distinct ragas share a name under
+// different melas - see relatedByMela's note), and a suggestion offers a
+// *name* to search for rather than picking one specific raga, so the list is
+// de-duplicated by name. The search below is what disambiguates: it still
+// lists every raga owning that name.
+let allNameItems = [];
+let suggestionItems = []; // what's listed right now, in listed order
+let activeSuggestion = -1; // keyboard cursor into it; -1 = nothing highlighted
+
+function buildNameList() {
+  const byName = new Map();
+  for (const raga of ragas) {
+    const seen = byName.get(raga.name);
+    if (seen) seen.isMelakarta = seen.isMelakarta || Boolean(raga.is_melakarta);
+    else byName.set(raga.name, { name: raga.name, isMelakarta: Boolean(raga.is_melakarta) });
+  }
+  allNameItems = [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function suggestionsForQuery() {
+  const query = ragaSearchInput.value;
+  if (!query.trim()) return [];
+  const items = [];
+  const seen = new Set();
+  for (const raga of matchesFor(query)) {
+    if (seen.has(raga.name)) continue;
+    seen.add(raga.name);
+    items.push({ name: raga.name, isMelakarta: Boolean(raga.is_melakarta) });
+    if (items.length === SUGGESTION_LIMIT) break;
+  }
+  return items;
+}
+
+function suggestionsOpen() {
+  return !suggestListEl.hidden;
+}
+
+function renderSuggestions(items) {
+  suggestionItems = items;
+  activeSuggestion = -1;
+  suggestListEl.innerHTML = "";
+  ragaSearchInput.removeAttribute("aria-activedescendant");
+
+  if (items.length === 0) {
+    const li = document.createElement("li");
+    li.className = "suggestion-empty";
+    li.textContent = "No raga names close to that.";
+    suggestListEl.appendChild(li);
+    return;
+  }
+
+  // Built as nodes rather than an innerHTML string: names carry braces,
+  // brackets and one "&amp;" straight from the source data, and textContent
+  // is the only way to put them on the page that can't be misread as markup.
+  const frag = document.createDocumentFragment();
+  items.forEach((item, i) => {
+    const li = document.createElement("li");
+    li.className = "suggestion";
+    li.id = `raga-suggestion-${i}`;
+    li.setAttribute("role", "option");
+    li.setAttribute("aria-selected", "false");
+    const name = document.createElement("span");
+    name.textContent = item.name;
+    li.appendChild(name);
+    if (item.isMelakarta) {
+      const tag = document.createElement("span");
+      tag.className = "suggestion-tag";
+      tag.textContent = "melakarta";
+      li.appendChild(tag);
+    }
+    frag.appendChild(li);
+  });
+  suggestListEl.appendChild(frag);
+}
+
+function setSuggestionsExpanded(open) {
+  suggestListEl.hidden = !open;
+  ragaSearchInput.setAttribute("aria-expanded", String(open));
+  suggestToggleBtn.setAttribute("aria-expanded", String(open));
+  suggestToggleBtn.classList.toggle("is-open", open);
+}
+
+function openSuggestions(items) {
+  renderSuggestions(items);
+  setSuggestionsExpanded(true);
+}
+
+function closeSuggestions() {
+  setSuggestionsExpanded(false);
+  suggestListEl.innerHTML = "";
+  suggestionItems = [];
+  activeSuggestion = -1;
+  ragaSearchInput.removeAttribute("aria-activedescendant");
+}
+
+function setActiveSuggestion(index) {
+  const options = suggestListEl.querySelectorAll(".suggestion");
+  if (options.length === 0) return;
+  const clamped = ((index % options.length) + options.length) % options.length;
+  options.forEach((el, i) => {
+    const on = i === clamped;
+    el.classList.toggle("is-active", on);
+    el.setAttribute("aria-selected", String(on));
+  });
+  activeSuggestion = clamped;
+  const active = options[clamped];
+  ragaSearchInput.setAttribute("aria-activedescendant", active.id);
+  active.scrollIntoView({ block: "nearest" });
+}
+
+function chooseSuggestion(index) {
+  const item = suggestionItems[index];
+  if (!item) return;
+  ragaSearchInput.value = item.name;
+  closeSuggestions();
+  // Setting .value in script fires no `input` event, so the search that
+  // normally rides on one has to be run by hand.
+  performRagaSearch();
+  ragaSearchInput.focus();
+}
+
+ragaSearchInput.addEventListener("input", () => {
+  performRagaSearch();
+  const items = suggestionsForQuery();
+  if (items.length > 0) openSuggestions(items);
+  else closeSuggestions();
+});
+
+ragaSearchInput.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault(); // or the caret jumps to either end of the input
+    if (!suggestionsOpen()) {
+      openSuggestions(ragaSearchInput.value.trim() ? suggestionsForQuery() : allNameItems);
+      setActiveSuggestion(e.key === "ArrowDown" ? 0 : -1);
+      return;
+    }
+    setActiveSuggestion(activeSuggestion + (e.key === "ArrowDown" ? 1 : -1));
+  } else if (e.key === "Enter") {
+    if (suggestionsOpen() && activeSuggestion >= 0) {
+      e.preventDefault();
+      chooseSuggestion(activeSuggestion);
+    } else {
+      closeSuggestions(); // Enter with nothing highlighted just means "done typing"
+    }
+  } else if (e.key === "Escape") {
+    if (suggestionsOpen()) {
+      e.stopPropagation();
+      closeSuggestions();
+    }
+  } else if (e.key === "Tab") {
+    closeSuggestions();
+  }
+});
+
+// mousedown, not click: the input would otherwise lose focus (and on iOS the
+// keyboard would drop) between press and release, and a suggestion list that
+// closes itself out from under the tap never registers the click at all.
+suggestListEl.addEventListener("mousedown", (e) => e.preventDefault());
+
+suggestListEl.addEventListener("click", (e) => {
+  const option = e.target.closest(".suggestion");
+  if (!option) return;
+  chooseSuggestion([...suggestListEl.querySelectorAll(".suggestion")].indexOf(option));
+});
+
+// The whole list, which is what the arrow is for: a query can only ever
+// suggest against itself, and "show me what there is" has no query. If
+// something *is* typed, the nearest match is highlighted and scrolled to, so
+// the arrow stays useful mid-word rather than dumping you at "Abheri".
+suggestToggleBtn.addEventListener("click", () => {
+  if (suggestionsOpen()) {
+    closeSuggestions();
+    return;
+  }
+  openSuggestions(allNameItems);
+  const best = suggestionsForQuery()[0];
+  if (best) setActiveSuggestion(allNameItems.findIndex((item) => item.name === best.name));
+  ragaSearchInput.focus();
+});
+
+document.addEventListener("pointerdown", (e) => {
+  if (!suggestionsOpen()) return;
+  if (e.target instanceof Element && e.target.closest(".search-combobox")) return;
+  closeSuggestions();
+});
 
 // Stops whatever's currently playing before switching views, same as
 // switching layout mode or muting does - two views' worth of Play buttons
 // left running into each other would be confusing, not useful.
 function openSearchView() {
   stopAllPlayback();
+  closeSettingsView();
   mainView.hidden = true;
   searchView.hidden = false;
   ragaSearchInput.focus();
@@ -709,12 +1096,38 @@ function openSearchView() {
 
 function closeSearchView() {
   stopActiveRowPreview();
+  closeSuggestions(); // it's positioned against the input it belongs to, which is on its way out
   searchView.hidden = true;
   mainView.hidden = false;
 }
 
 searchOpenBtn.addEventListener("click", openSearchView);
 searchBackBtn.addEventListener("click", closeSearchView);
+
+// Settings is an overlay, not a view swap: the main page stays mounted and
+// visible underneath, so changing input style or layout is watched happening
+// rather than discovered on the way back. That is also why playback is *not*
+// stopped on the way in - unlike the search view, you have not gone anywhere.
+function openSettingsView() {
+  settingsView.hidden = false;
+}
+
+function closeSettingsView() {
+  settingsView.hidden = true;
+}
+
+settingsOpenBtn.addEventListener("click", openSettingsView);
+settingsBackBtn.addEventListener("click", closeSettingsView);
+
+// A click that lands on the backdrop rather than the panel closes it. The
+// panel itself stops nothing - it just isn't the backdrop.
+settingsView.addEventListener("click", (e) => {
+  if (e.target === settingsView) closeSettingsView();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !settingsView.hidden) closeSettingsView();
+});
 
 // --- Play / loop -----------------------------------------------------
 
@@ -999,6 +1412,7 @@ function playScaleOnce(raga) {
 resetBtn.addEventListener("click", () => {
   combinedPlayer.stop();
   combined.length = 0;
+  clearInsertPoint();
   // The baseline went with the notes - there's nothing left to be
   // transposed *from*.
   transposeState.combined = { steps: 0, offset: 0 };
@@ -1008,6 +1422,7 @@ resetBtn.addEventListener("click", () => {
 arohanaResetBtn.addEventListener("click", () => {
   stopAllSeparatePlayers();
   arohanaSel.length = 0;
+  clearInsertPoint();
   transposeState.arohana = { steps: 0, offset: 0 };
   renderInputs();
   renderResults();
@@ -1015,6 +1430,7 @@ arohanaResetBtn.addEventListener("click", () => {
 avarohanaResetBtn.addEventListener("click", () => {
   stopAllSeparatePlayers();
   avarohanaSel.length = 0;
+  clearInsertPoint();
   transposeState.avarohana = { steps: 0, offset: 0 };
   renderInputs();
   renderResults();
@@ -1152,6 +1568,7 @@ document.querySelectorAll('input[name="layout-mode"]').forEach((radio) => {
   radio.addEventListener("change", (e) => {
     if (e.target.checked) {
       stopAllPlayback();
+      clearInsertPoint();
       if (e.target.value !== layoutMode) inheritSelection(layoutMode, e.target.value);
       layoutMode = e.target.value;
       updateLayoutVisibility();
@@ -1171,6 +1588,7 @@ orderModeToggle.addEventListener("change", () => {
   // than the selection sorted - so a sequence already running would be
   // finishing out something the controls no longer describe.
   stopAllPlayback();
+  clearInsertPoint();
   orderMode = orderModeToggle.checked;
   renderInputs();
   renderResults();
@@ -1240,6 +1658,7 @@ function buildReferenceTable() {
     }
 
     const codeCell = document.createElement("td");
+    codeCell.className = "swara-code"; // a swara name, so it takes the swara face
     codeCell.textContent = referenceRowCode(row, labelPrefs);
 
     tr.appendChild(nameCell);
@@ -1291,7 +1710,8 @@ async function init() {
     return;
   }
   renderResults();
-  populateRagaNamesDatalist();
+  nameIndex = buildNameIndex(ragas);
+  buildNameList();
 }
 
 init();

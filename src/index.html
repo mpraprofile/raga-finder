@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SwaRaga</title>
+  <title>SwaRāgā</title>
 
   <!-- PWA: installable "Add to Home Screen" on Android/iOS - see
        specs/02-swara-keyboard-finder.md's "Distribution" -->
@@ -14,72 +14,78 @@
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="SwaRaga">
+  <meta name="apple-mobile-web-app-title" content="SwaRāgā">
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Forum&display=swap" rel="stylesheet">
+  <!-- No font <link> here any more. Both faces are bundled subsets under
+       fonts/ and declared in style.css, so the app fetches nothing from a
+       third party and the service worker can cache every byte it needs -
+       see fonts/README.md. -->
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
   <div id="main-view">
-  <div class="page-header">
-    <h1>SwaRaga</h1>
+  <div class="page-header app-header">
+    <!-- The wordmark, not typeset text: it carries the tanpura and the
+         green-S/gold-R pairing that the app icon is built on, which no font can
+         do. Still an <h1> wrapping an <img alt>, so the page keeps its heading
+         and its accessible name - and if the image ever fails to load, the alt
+         text falls back to the same Forum serif the heading used before. -->
+    <h1 class="app-title"><img src="icons/logo-title.png" width="422" height="240" alt="SwaRāgā"></h1>
+    <button type="button" id="settings-open-btn" class="icon-btn" aria-label="Swara names &amp; label preferences" title="Swara names &amp; label preferences">
+      <!-- Info "i" with a gear badge: the panel is a reference table *and* the
+           one place a preference is set, and the plain "i" only advertised the
+           first half. The badge is drawn over a disc of the button's own
+           background (.icon-cutout) so it reads as sitting on top of the
+           circle rather than merging with its stroke. The gear is a filled
+           path rather than a stroked one - at this size a 2px stroke on a 6px
+           wheel is solid ink either way, and a fill keeps the teeth distinct. -->
+      <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="9.8" cy="9.8" r="8"/>
+        <line x1="9.8" y1="9.2" x2="9.8" y2="14.4"/>
+        <circle cx="9.8" cy="5.6" r="0.75" fill="currentColor" stroke="none"/>
+        <circle class="icon-cutout" cx="17.6" cy="17.6" r="5.9" stroke="none"/>
+        <path d="M16.26 14.97 L16.63 13.41 L18.57 13.41 L18.94 14.97 L19.21 15.13 L20.74 14.67 L21.71 16.34 L20.55 17.45 L20.55 17.75 L21.71 18.86 L20.74 20.53 L19.21 20.07 L18.94 20.23 L18.57 21.79 L16.63 21.79 L16.26 20.23 L15.99 20.07 L14.46 20.53 L13.49 18.86 L14.65 17.75 L14.65 17.45 L13.49 16.34 L14.46 14.67 L15.99 15.13 Z" fill="currentColor" stroke="none"/>
+        <circle class="icon-cutout" cx="17.6" cy="17.6" r="1.45" stroke="none"/>
+      </svg>
+    </button>
     <button type="button" id="search-open-btn" class="icon-btn" aria-label="Search ragas by name" title="Search ragas by name">
       <span class="search-icon-img" aria-hidden="true"></span>
     </button>
   </div>
 
-  <details class="note-reference">
-    <summary>Carnatic note names &amp; label preferences</summary>
-    <table class="reference-table">
-      <thead>
-        <tr><th>Name</th><th>Code</th></tr>
-      </thead>
-      <tbody id="note-reference-body"></tbody>
-    </table>
-    <p class="label-prefs-intro">
-      Some schools number Gandhara/Nishada variants by pitch order (Shuddha=1, being lowest); others by frequency
-      of use instead, since Shuddha is rare/vivadi - pushing it to "3" and cycling Sadharana/Kaisiki and
-      Antara/Kakali down to "1" and "2". Pick your convention using the Shuddha Gandhara / Shuddha Nishada rows
-      above - the other rows in each family update to match. This choice changes every place a note is shown
-      across the app, including each raga's own result further down - it's just a relabeling of the same scale,
-      not a change to what the scale is.
-    </p>
-  </details>
 
   <details class="controls-panel" open>
     <summary>Controls</summary>
     <div class="controls-row">
-      <fieldset class="control-group theme-toggle" id="theme-group">
-        <legend>Theme</legend>
-        <label><input type="radio" name="theme-pref" value="system" checked> System</label>
-        <label><input type="radio" name="theme-pref" value="light"> Light</label>
-        <label><input type="radio" name="theme-pref" value="dark"> Dark</label>
-      </fieldset>
-      <fieldset class="control-group" id="input-style-group">
-        <legend>Input style</legend>
-        <label><input type="radio" name="input-style" value="piano" checked> Piano</label>
-        <label><input type="radio" name="input-style" value="wheel"> Swara wheel</label>
-        <label><input type="radio" name="input-style" value="buttons"> Buttons</label>
-      </fieldset>
-      <fieldset class="control-group" id="layout-group">
-        <legend>Layout</legend>
-        <label><input type="radio" name="layout-mode" value="combined" checked> Combined</label>
-        <label><input type="radio" name="layout-mode" value="separate"> Separate arohana/avarohana</label>
-      </fieldset>
-      <div class="note-order-row">
-        <button type="button" class="mute-btn" id="mute-btn" aria-pressed="false"></button>
-        <!-- Nothing in here is ever hidden. Whatever doesn't apply right now
-             is greyed and disabled in place by updateControlAvailability(),
-             so the panel never reflows underneath you. -->
-        <div class="control-group" id="note-order-group">
-          <label id="free-play-label"><input type="checkbox" id="free-play-toggle"> Free play Piano</label>
-          <label id="order-mode-label"><input type="checkbox" id="order-mode-toggle"> Record note order (for vakra search)</label>
-          <label id="play-both-label"><input type="checkbox" id="play-both-toggle" checked> Play both (Arohana + Avarohana)</label>
-          <label id="transpose-both-label"><input type="checkbox" id="transpose-both-toggle" checked> Transpose both (Arohana + Avarohana)</label>
-        </div>
+    <fieldset class="control-group" id="theme-group">
+      <legend>Theme</legend>
+      <label><input type="radio" name="theme-pref" value="system" checked> System</label>
+      <label><input type="radio" name="theme-pref" value="light"> Light</label>
+      <label><input type="radio" name="theme-pref" value="dark"> Dark</label>
+    </fieldset>
+    <fieldset class="control-group" id="input-style-group">
+      <legend>Input style</legend>
+      <label><input type="radio" name="input-style" value="piano" checked> Piano</label>
+      <label><input type="radio" name="input-style" value="wheel"> Swara wheel</label>
+      <label><input type="radio" name="input-style" value="buttons"> Buttons</label>
+    </fieldset>
+    <fieldset class="control-group" id="layout-group">
+      <legend>Layout</legend>
+      <label><input type="radio" name="layout-mode" value="combined" checked> Combined</label>
+      <label><input type="radio" name="layout-mode" value="separate"> Separate arohana/avarohana</label>
+    </fieldset>
+    <div class="note-order-row">
+      <button type="button" class="mute-btn" id="mute-btn" aria-pressed="false"></button>
+      <!-- Nothing in here is ever hidden. Whatever doesn't apply right now
+           is greyed and disabled in place by updateControlAvailability(),
+           so the panel never reflows underneath you. -->
+      <div class="control-group" id="note-order-group">
+        <label id="free-play-label"><input type="checkbox" id="free-play-toggle"> Free play Piano</label>
+        <label id="order-mode-label"><input type="checkbox" id="order-mode-toggle"> Record swara order (for vakra search)</label>
+        <label id="play-both-label"><input type="checkbox" id="play-both-toggle" checked> Play both (Arohana + Avarohana)</label>
+        <label id="transpose-both-label"><input type="checkbox" id="transpose-both-toggle" checked> Shift both (Arohana + Avarohana)</label>
       </div>
+    </div>
     </div>
   </details>
 
@@ -94,14 +100,14 @@
     </div>
     <div class="transpose-row" id="combined-transpose">
       <div class="transpose-lead">
-        <button type="button" class="set-zero-btn" id="combined-transpose-reset" title="Treat the current selection as the new zero point">Set as 0</button>
+        <button type="button" class="set-zero-btn" id="combined-transpose-reset" title="Treat the current selection as the new zero point - no shift">Set as 0</button>
       </div>
       <div class="transpose-main">
-        <button type="button" class="transpose-btn" id="combined-transpose-down" title="Transpose down: make the previous selected note Sa">&#9666;</button>
+        <button type="button" class="transpose-btn" id="combined-transpose-down" title="Shift the tonic down: make the previous selected swara Sa">&#9666;</button>
         <span class="transpose-count down" id="combined-transpose-count-down"></span>
-        <span class="transpose-title">Transpose</span>
+        <span class="transpose-title"><span>Graha bhēdam</span><span class="gloss">Tonic shift</span></span>
         <span class="transpose-count up" id="combined-transpose-count-up"></span>
-        <button type="button" class="transpose-btn" id="combined-transpose-up" title="Transpose up: make the next selected note Sa">&#9656;</button>
+        <button type="button" class="transpose-btn" id="combined-transpose-up" title="Shift the tonic up: make the next selected swara Sa">&#9656;</button>
       </div>
       <div class="transpose-tail"></div>
     </div>
@@ -120,14 +126,14 @@
       </div>
       <div class="transpose-row" id="arohana-transpose">
         <div class="transpose-lead">
-          <button type="button" class="set-zero-btn" id="arohana-transpose-reset" title="Treat the current selection as the new zero point">Set as 0</button>
+          <button type="button" class="set-zero-btn" id="arohana-transpose-reset" title="Treat the current selection as the new zero point - no shift">Set as 0</button>
         </div>
         <div class="transpose-main">
-          <button type="button" class="transpose-btn" id="arohana-transpose-down" title="Transpose down: make the previous selected note Sa">&#9666;</button>
+          <button type="button" class="transpose-btn" id="arohana-transpose-down" title="Shift the tonic down: make the previous selected swara Sa">&#9666;</button>
           <span class="transpose-count down" id="arohana-transpose-count-down"></span>
-          <span class="transpose-title">Transpose</span>
+          <span class="transpose-title"><span>Graha bhēdam</span><span class="gloss">Tonic shift</span></span>
           <span class="transpose-count up" id="arohana-transpose-count-up"></span>
-          <button type="button" class="transpose-btn" id="arohana-transpose-up" title="Transpose up: make the next selected note Sa">&#9656;</button>
+          <button type="button" class="transpose-btn" id="arohana-transpose-up" title="Shift the tonic up: make the next selected swara Sa">&#9656;</button>
         </div>
         <div class="transpose-tail"></div>
       </div>
@@ -144,14 +150,14 @@
       </div>
       <div class="transpose-row" id="avarohana-transpose">
         <div class="transpose-lead">
-          <button type="button" class="set-zero-btn" id="avarohana-transpose-reset" title="Treat the current selection as the new zero point">Set as 0</button>
+          <button type="button" class="set-zero-btn" id="avarohana-transpose-reset" title="Treat the current selection as the new zero point - no shift">Set as 0</button>
         </div>
         <div class="transpose-main">
-          <button type="button" class="transpose-btn" id="avarohana-transpose-down" title="Transpose down: make the previous selected note Sa">&#9666;</button>
+          <button type="button" class="transpose-btn" id="avarohana-transpose-down" title="Shift the tonic down: make the previous selected swara Sa">&#9666;</button>
           <span class="transpose-count down" id="avarohana-transpose-count-down"></span>
-          <span class="transpose-title">Transpose</span>
+          <span class="transpose-title"><span>Graha bhēdam</span><span class="gloss">Tonic shift</span></span>
           <span class="transpose-count up" id="avarohana-transpose-count-up"></span>
-          <button type="button" class="transpose-btn" id="avarohana-transpose-up" title="Transpose up: make the next selected note Sa">&#9656;</button>
+          <button type="button" class="transpose-btn" id="avarohana-transpose-up" title="Shift the tonic up: make the next selected swara Sa">&#9656;</button>
         </div>
         <div class="transpose-tail"></div>
       </div>
@@ -163,6 +169,29 @@
   <ul id="results" class="results"></ul>
   </div>
 
+  <div id="settings-view" hidden>
+    <div class="settings-panel">
+      <div class="settings-panel-header">
+        <h2>Swara names &amp; label preferences</h2>
+        <button type="button" id="settings-back-btn" class="settings-close" aria-label="Close" title="Close">&times;</button>
+      </div>
+    <table class="reference-table">
+    <thead>
+      <tr><th>Name</th><th>Code</th></tr>
+    </thead>
+    <tbody id="note-reference-body"></tbody>
+    </table>
+    <p class="label-prefs-intro">
+    Some schools number Gandhara/Nishada variants by pitch order (Shuddha=1, being lowest); others by frequency
+    of use instead, since Shuddha is rare/vivadi - pushing it to "3" and cycling Sadharana/Kaisiki and
+    Antara/Kakali down to "1" and "2". Pick your convention using the Shuddha Gandhara / Shuddha Nishada rows
+    above - the other rows in each family update to match. This choice changes every place a swara is shown
+    across the app, including each raga's own result further down - it's just a relabeling of the same scale,
+    not a change to what the scale is.
+    </p>
+    </div>
+  </div>
+
   <div id="search-view" hidden>
     <div class="page-header">
       <button type="button" id="search-back-btn" class="icon-btn" aria-label="Back">
@@ -170,11 +199,28 @@
       </button>
       <h1>Search Ragas</h1>
     </div>
+    <!-- A hand-built combobox, not an <input list> + <datalist>. The native
+         one only ever worked on Chrome desktop: its dropdown and its
+         drop-arrow are drawn by the browser, so mobile browsers showed no
+         arrow and inconsistent (or no) suggestions, and in an embedded
+         webview the popup was painted outside the page's own layout. This is
+         ordinary DOM inside a positioned wrapper, so it renders identically
+         everywhere - see specs/02-swara-keyboard-finder.md. -->
     <div class="search-input-row">
-      <input type="text" id="raga-search-input" list="raga-names-datalist" placeholder="Type a raga name…" autocomplete="off">
-      <datalist id="raga-names-datalist"></datalist>
+      <div class="search-combobox">
+        <input type="text" id="raga-search-input" placeholder="Type a raga name…"
+               autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search"
+               role="combobox" aria-expanded="false" aria-controls="raga-suggestions"
+               aria-autocomplete="list" aria-label="Raga name">
+        <button type="button" id="raga-suggest-toggle" class="combobox-toggle"
+                aria-label="Show all raga names" title="Show all raga names"
+                aria-expanded="false" aria-controls="raga-suggestions">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <ul id="raga-suggestions" class="search-suggestions" role="listbox" aria-label="Raga names" hidden></ul>
+      </div>
     </div>
-    <p id="search-prompt" class="prompt">Type a raga name to search.</p>
+    <p id="search-prompt" class="prompt">Type a raga name to search - partial names and typos are fine.</p>
     <ul id="search-results" class="results"></ul>
   </div>
 

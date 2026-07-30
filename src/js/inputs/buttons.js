@@ -18,7 +18,8 @@ import { applySwaraColors, keyLabelHtml, renderSelectionBox } from "../notation.
 // notes between P and top S (D1 through N3); top S alone.
 const BUTTON_ROWS = [[0], [1, 2, 3, 4, 5, 6], [7], [8, 9, 10, 11], [12]];
 
-export function render(container, { selected, onToggle, onRemove, onRemoveOrder, labelPrefs, order, list, descending }) {
+export function render(container, props) {
+  const { selected, onToggle, labelPrefs, order } = props;
   container.className = "buttons-style";
   container.innerHTML = "";
 
@@ -53,7 +54,9 @@ export function render(container, { selected, onToggle, onRemove, onRemoveOrder,
   // keep: it's the only thing that shows the *sequence*, including repeats.
   if (order) {
     const box = document.createElement("div");
-    renderSelectionBox(box, { list, order, onRemove, onRemoveOrder, labelPrefs, descending, showPositions: false });
+    // Whole props through, so the tray's editing hooks (insertAt, onReorder,
+    // onInsertAtChange) reach it without this style having to know they exist.
+    renderSelectionBox(box, props);
     container.appendChild(box);
   }
 }

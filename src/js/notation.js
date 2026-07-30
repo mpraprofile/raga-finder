@@ -16,6 +16,29 @@
 //    stored label (see `renumberLabel`) - since it's just a relabeling of
 //    the same physical scale, not a change to what the scale *is*.
 
+// Sthayi (octave register) is written the traditional way: a dot above the
+// swara for tara (the octave up), a dot below for mandra (the octave down),
+// nothing for madhya. These are Unicode *combining* marks rather than
+// precomposed letters or a CSS overlay, for three reasons: they compose onto
+// any of the swara letters (there is no precomposed "R with dot above"), they
+// survive being copied out of the page as text, and they need no extra
+// element inside a label that is already sometimes two stacked lines.
+//
+// The mark attaches to the *letter*, not to the variant number - "R2" in tara
+// is R-with-dot followed by 2, not R followed by 2-with-dot.
+const DOT_ABOVE = "̇";
+const DOT_BELOW = "̣";
+
+// sthayi: +1 tara, -1 mandra, 0/undefined madhya.
+export function applySthayi(label, sthayi) {
+  if (!sthayi || !label) return label;
+  const mark = sthayi > 0 ? DOT_ABOVE : DOT_BELOW;
+  return label
+    .split("/")
+    .map((token) => token.charAt(0) + mark + token.slice(1))
+    .join("/");
+}
+
 // Degree -> role, for the three Gandhara and three Nishada variants.
 const GANDHARA_ROLE_AT_DEGREE = { 2: "shuddha", 3: "sadharana", 4: "antara" };
 const NISHADA_ROLE_AT_DEGREE = { 9: "shuddha", 10: "kaisiki", 11: "kakali" };
@@ -75,7 +98,7 @@ export function labelForDegree(degree, prefs = {}) {
     case 11:
       return nishadaCode("kakali", prefs);
     case 12:
-      return "S'";
+      return applySthayi("S", 1);
     default:
       return "";
   }
@@ -156,6 +179,15 @@ const NISHADA_STD_TOKEN_TO_ROLE = { N1: "shuddha", N2: "kaisiki", N3: "kakali" }
 // user's current numbering preference - used everywhere a raga's own
 // arohana/avarohana label is displayed, so the choice applies consistently
 // across the whole app, not just the input widgets.
+// A stored note ({degree, label}) as it should appear on screen: the user's
+// numbering preference applied, plus the sthayi mark for the octave bookend.
+// data/ragas.json stores that closing note as a plain "S" (it's degree 12
+// that carries the octave, per CLAUDE.md), so without this a raga's scale
+// line ended on a bare S while every widget showed the dotted one.
+export function noteLabel(note, prefs = {}) {
+  return applySthayi(renumberLabel(note.label, prefs), note.degree === 12 ? 1 : 0);
+}
+
 export function renumberLabel(label, prefs = {}) {
   if (label in GANDHARA_STD_TOKEN_TO_ROLE) {
     return gandharaCode(GANDHARA_STD_TOKEN_TO_ROLE[label], prefs);
@@ -217,9 +249,10 @@ export const DEGREES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 // Shared by every input style's key/tile: compound labels (e.g. "R2/G1")
 // stack with the G/N name on top, the R/D name on bottom, rather than
-// running both names together on one line.
-export function keyLabelHtml(degree, labelPrefs) {
-  const label = labelForDegree(degree, labelPrefs);
+// running both names together on one line. `sthayi` marks the octave for keys
+// outside the selectable one - see the Piano's extended keyboard.
+export function keyLabelHtml(degree, labelPrefs, sthayi = 0) {
+  const label = applySthayi(labelForDegree(degree, labelPrefs), sthayi);
   if (!label.includes("/")) return `<span class="key-label">${label}</span>`;
   const [bottom, top] = label.split("/");
   return `<span class="key-label stacked">${top}<br>${bottom}</span>`;
@@ -235,68 +268,17 @@ export function isBlackKey(semitone) {
   return !NATURAL_PITCH_CLASSES.has(((semitone % 12) + 12) % 12);
 }
 
-// Shared across piano/buttons: builds a key/tile's order-badge stack from
-// `positions` (an array of 1-based click positions - a note can appear more
-// than once when order mode is on, since vakra ragas repeat notes). Stacked
-// vertically in normal flow rather than each badge being independently
-// positioned, which is what made repeats overlap each other before; most
-// recent occurrence (highest number) on top. Returns a real DOM node (not an
-// HTML string) so each badge can carry its own click listener - clicking a
-// badge removes that exact recorded occurrence via `onRemoveAt(position)`,
-// without needing string-based event delegation. Returns null when there's
-// nothing to show.
-//
-// `maxVisible` (default unlimited): caps how many badges actually render:
-// the most recent `maxVisible` occurrences get real (clickable/removable)
-// badges, and anything older than that collapses into one plain "+N"
-// indicator badge instead - not clickable, since it represents more than
-// one occurrence and there's no single position to remove. Piano passes 5
-// here (its keys are tall enough for a badge stack but not an unbounded
-// one); other styles leave it unlimited.
-export function buildOrderBadgeStack(positions, onRemoveAt, maxVisible = Infinity) {
-  if (!positions || positions.length === 0) return null;
-
-  const stack = document.createElement("span");
-  stack.className = "order-badge-stack";
-
-  const nums = [...positions].sort((a, b) => b - a);
-  const visible = nums.slice(0, maxVisible);
-  const hiddenCount = nums.length - visible.length;
-
-  for (const n of visible) {
-    const badge = document.createElement("span");
-    badge.className = "order-badge";
-    badge.textContent = String(n);
-    badge.title = `Remove this note (position ${n})`;
-    badge.setAttribute("role", "button");
-    badge.tabIndex = 0;
-    // stopPropagation: the badge sits inside the key/tile's own button, so
-    // without this its click would also trigger the key's onToggle/onAdd.
-    badge.addEventListener("click", (e) => {
-      e.stopPropagation();
-      onRemoveAt(n);
-    });
-    badge.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        e.stopPropagation();
-        onRemoveAt(n);
-      }
-    });
-    stack.appendChild(badge);
-  }
-
-  if (hiddenCount > 0) {
-    const more = document.createElement("span");
-    more.className = "order-badge order-badge-more";
-    more.textContent = `+${hiddenCount}`;
-    more.title = `${hiddenCount} more recorded occurrence${hiddenCount > 1 ? "s" : ""} (not shown)`;
-    stack.appendChild(more);
-  }
-
-  return stack;
+// A pre-transpose swara name, formatted for a reference annotation: no
+// brackets, and a compound name stacked onto two lines with the higher swara
+// of the pair on top - the same order keyLabelHtml uses for a real label, so
+// an annotation and the label under it never disagree about which name sits
+// where. Returned as text with a newline in it; the elements that show these
+// are white-space: pre-line. Shared so the Piano and the wheel's reference
+// ring cannot drift apart in format.
+export function stackReferenceLabel(label) {
+  const parts = label.split("/");
+  return parts.length > 1 ? parts[1] + "\n" + parts[0] : label;
 }
-
 // The "swara selection box" - a tray of tiles showing the current
 // selection, each tile tappable to remove exactly that occurrence. Started
 // as the old Assembler style's tray; now shared by the merged Buttons style
@@ -309,18 +291,51 @@ export function buildOrderBadgeStack(positions, onRemoveAt, maxVisible = Infinit
 // shows the recorded click order as-is (unsorted), one position badge per
 // tile; otherwise sorted by degree (`descending` for an avarohana-direction
 // tray, ascending everywhere else).
-// `showPositions` (default true) draws the yellow numbered badge on each
-// tile. Buttons turns it off: its tray already reads left-to-right in the
-// recorded order, so the numbers only restated what the layout said, at the
-// cost of a second tap target per tile. The tile itself still removes that
-// exact occurrence, which is what the badge was for.
-export function renderSelectionBox(container, { list, order, onRemove, onRemoveOrder, labelPrefs, descending, showPositions = true }) {
+// No position badges anywhere. The tray already reads left-to-right in the
+// recorded order, so a number on each tile only restated what the layout
+// said - at the cost of a second tap target per tile, on tiles that are now
+// draggable. The Piano's keys carried numbered badges longest, since a key
+// can hold several occurrences of one swara and the keyboard had no other way
+// to show that; the tray shows it better, in one place, for every style.
+//
+// In order mode the tray is not just a display - it is where a recorded
+// sequence gets edited, so a single wrong swara doesn't mean re-entering the
+// whole phrase:
+//   * tap a tile   -> remove exactly that occurrence (onRemoveOrder)
+//   * tap a gap    -> put the insertion caret there, so the next swara pressed
+//                     lands at that point rather than at the end
+//                     (onInsertAtChange)
+//   * drag a tile  -> move it to another position (onReorder)
+// Tap and drag share one pointer gesture and are told apart by distance, the
+// same way the wheel tells a tap from a sweep: under DRAG_THRESHOLD it was a
+// tap, over it a move. Without that rule every attempt to drag would delete
+// the tile it started on.
+const DRAG_THRESHOLD = 6;
+
+export function renderSelectionBox(container, props) {
+  const {
+    list,
+    order,
+    onRemove,
+    onRemoveOrder,
+    labelPrefs,
+    descending,
+    insertAt = null,
+    onInsertAtChange,
+    onReorder,
+  } = props;
+  const editable = Boolean(order && onReorder && onInsertAtChange);
+
   container.className = "selection-box";
   container.innerHTML = "";
 
   const label = document.createElement("p");
   label.className = "selection-box-label";
-  label.textContent = order ? "Your scale, in the order added - tap to remove" : "Your scale - tap to remove";
+  label.textContent = order
+    ? editable
+      ? "Your scale, in the order added - tap to remove, drag to reorder, tap a gap to insert there"
+      : "Your scale, in the order added - tap to remove"
+    : "Your scale - tap to remove";
   container.appendChild(label);
 
   const tray = document.createElement("div");
@@ -329,7 +344,23 @@ export function renderSelectionBox(container, { list, order, onRemove, onRemoveO
     ? list.map((degree, i) => ({ degree, position: i + 1 }))
     : [...list].sort((a, b) => (descending ? b - a : a - b)).map((degree) => ({ degree, position: null }));
 
-  entries.forEach(({ degree, position }) => {
+  // One gap before every tile and one after the last, so the caret can sit at
+  // any of the list.length + 1 insertion points.
+  const addGap = (index) => {
+    if (!editable) return;
+    const gap = document.createElement("button");
+    gap.type = "button";
+    gap.className = "tray-gap" + (insertAt === index ? " active" : "");
+    gap.dataset.index = String(index);
+    gap.title = insertAt === index ? "Insert here (tap to cancel)" : "Insert the next swara here";
+    gap.setAttribute("aria-label", gap.title);
+    gap.addEventListener("click", () => onInsertAtChange(insertAt === index ? null : index));
+    tray.appendChild(gap);
+  };
+
+  entries.forEach(({ degree, position }, index) => {
+    addGap(index);
+
     const tile = document.createElement("button");
     tile.type = "button";
     // Same coloured circle as the wheel's nodes and the Buttons keys - the
@@ -337,22 +368,90 @@ export function renderSelectionBox(container, { list, order, onRemove, onRemoveO
     // generic blue chips. Always `.selected`: everything in the tray is,
     // by definition, part of the selection.
     tile.className = "key tile swara-chip selected";
+    tile.dataset.index = String(index);
     applySwaraColors(tile, degree);
     tile.innerHTML = keyLabelHtml(degree, labelPrefs);
+
     if (position) {
-      // Order mode: this tile IS one specific recorded occurrence, so its
-      // own click (same as clicking its badge) removes exactly that
-      // position - not just "one occurrence of this degree" (onRemove),
-      // which could target a different tile when a degree repeats.
-      if (showPositions) {
-        const badges = buildOrderBadgeStack([position], onRemoveOrder);
-        if (badges) tile.appendChild(badges);
-      }
-      tile.addEventListener("click", () => onRemoveOrder(position));
+      // Order mode: this tile IS one specific recorded occurrence, so a tap
+      // removes exactly that position - not just "one occurrence of this
+      // degree" (onRemove), which could target a different tile when a degree
+      // repeats. When editable, that tap is resolved by the pointer handler
+      // below, which has to see the whole gesture before it can call it a tap
+      // rather than a drag.
+      if (!editable) tile.addEventListener("click", () => onRemoveOrder(position));
     } else {
       tile.addEventListener("click", () => onRemove(degree));
     }
     tray.appendChild(tile);
   });
+
+  addGap(entries.length);
   container.appendChild(tray);
+
+  if (editable) attachTrayEditing(tray, { onRemoveOrder, onReorder });
+}
+
+// Pointer handling for the editable tray. A drop is resolved against the gap
+// elements' own positions rather than against the tiles, so it lands "between
+// these two swaras" - which is what an insertion point means - and keeps
+// working unchanged once the tray wraps onto several rows.
+function attachTrayEditing(tray, { onRemoveOrder, onReorder }) {
+  let drag = null;
+
+  const nearestGap = (x, y) => {
+    let best = null;
+    for (const gap of tray.querySelectorAll(".tray-gap")) {
+      const r = gap.getBoundingClientRect();
+      // Rows sit far apart vertically compared with the gaps within a row, so
+      // weighting y keeps a drag from jumping to the row above or below.
+      const d = Math.hypot(r.left + r.width / 2 - x, (r.top + r.height / 2 - y) * 2.5);
+      if (!best || d < best.d) best = { index: Number(gap.dataset.index), el: gap, d };
+    }
+    return best;
+  };
+
+  tray.addEventListener("pointerdown", (e) => {
+    const tile = e.target.closest(".tile");
+    if (!tile || drag) return;
+    drag = { pointerId: e.pointerId, from: Number(tile.dataset.index), tile, startX: e.clientX, startY: e.clientY, moved: false, target: null };
+    try {
+      tray.setPointerCapture(e.pointerId);
+    } catch {
+      /* not capturable - the drag still works while the pointer stays inside */
+    }
+  });
+
+  tray.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    if (!drag.moved && Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_THRESHOLD) return;
+    if (!drag.moved) {
+      drag.moved = true;
+      drag.tile.classList.add("dragging");
+      tray.classList.add("is-dragging");
+    }
+    const gap = nearestGap(e.clientX, e.clientY);
+    if (drag.target && drag.target.el !== gap.el) drag.target.el.classList.remove("drop-target");
+    gap.el.classList.add("drop-target");
+    drag.target = gap;
+  });
+
+  const finish = (e, cancelled) => {
+    if (!drag || e.pointerId !== drag.pointerId) return;
+    const { moved, from, target, tile } = drag;
+    drag = null;
+    tile.classList.remove("dragging");
+    tray.classList.remove("is-dragging");
+    if (target) target.el.classList.remove("drop-target");
+    if (cancelled) return;
+    // A gesture that never travelled is a tap, and a tap removes - the tray's
+    // original behaviour, kept intact.
+    if (!moved) onRemoveOrder(from + 1);
+    // Dropping into either gap that already flanks the tile is a no-op, not a
+    // move to position 0.
+    else if (target && target.index !== from && target.index !== from + 1) onReorder(from, target.index);
+  };
+
+  tray.addEventListener("pointerup", (e) => finish(e, false));
+  tray.addEventListener("pointercancel", (e) => finish(e, true));
 }
