@@ -15,6 +15,8 @@ import {
 } from "./ragas.js";
 import { playPianoTone, setMuted } from "./audio.js";
 import { REFERENCE_ROWS, referenceRowCode, noteLabel } from "./notation.js";
+import { checkAgainstStored } from "./melakarta.js";
+import { mountMelaChart, renderKatapayadiReference } from "./mela-chart.js";
 import * as piano from "./inputs/piano.js";
 import * as buttons from "./inputs/buttons.js";
 import * as wheel from "./inputs/wheel.js";
@@ -871,10 +873,11 @@ function loadRagaIntoKeyboard(raga) {
   updateLayoutVisibility();
   renderInputs();
   renderResults();
-  closeSearchView();
-  // The search results are a long list and the loaded scale is at the top of
-  // the page it just swapped to.
-  window.scrollTo({ top: 0 });
+  // Whichever view the button was in - the name search's results or the
+  // chakra chart's detail panel - the answer now lives on the main page, and
+  // showView() scrolls to the top of it (both of those lists are long, and
+  // the loaded scale is at the top of the page it just swapped to).
+  showView("main");
 }
 
 function loadButton(raga) {
@@ -1083,50 +1086,45 @@ document.addEventListener("pointerdown", (e) => {
   closeSuggestions();
 });
 
-// Stops whatever's currently playing before switching views, same as
-// switching layout mode or muting does - two views' worth of Play buttons
-// left running into each other would be confusing, not useful.
-function openSearchView() {
+// --- View switching ------------------------------------------------------
+// Three top-level views, exactly one visible at a time. The reference view
+// used to be a fixed-position overlay floating over a still-live main view,
+// which is why it could get away with open/close pairs that each knew only
+// about themselves; now that it is a full page (the chakra chart needs the
+// width - see specs/04-melakarta-chakra-wheel.md), "open search" and "close
+// reference" would both have an opinion about whether #main-view is visible,
+// and they would race. One function owns that instead.
+//
+// Switching always stops playback, same as switching layout mode or muting
+// does: two views' worth of Play buttons left running into each other would
+// be confusing, not useful. That applies to the reference view too now - it
+// stopped being the case that "you have not gone anywhere".
+const VIEWS = { main: () => mainView, search: () => searchView, settings: () => settingsView };
+
+function showView(name) {
   stopAllPlayback();
-  closeSettingsView();
-  mainView.hidden = true;
-  searchView.hidden = false;
-  ragaSearchInput.focus();
+  closeSuggestions(); // positioned against the search input, which may be on its way out
+  for (const [key, el] of Object.entries(VIEWS)) el().hidden = key !== name;
+  if (name === "search") ragaSearchInput.focus();
+  else window.scrollTo({ top: 0 });
+}
+
+function openSearchView() {
+  showView("search");
 }
 
 function closeSearchView() {
-  stopActiveRowPreview();
-  closeSuggestions(); // it's positioned against the input it belongs to, which is on its way out
-  searchView.hidden = true;
-  mainView.hidden = false;
+  showView("main");
 }
 
 searchOpenBtn.addEventListener("click", openSearchView);
-searchBackBtn.addEventListener("click", closeSearchView);
+searchBackBtn.addEventListener("click", () => showView("main"));
 
-// Settings is an overlay, not a view swap: the main page stays mounted and
-// visible underneath, so changing input style or layout is watched happening
-// rather than discovered on the way back. That is also why playback is *not*
-// stopped on the way in - unlike the search view, you have not gone anywhere.
-function openSettingsView() {
-  settingsView.hidden = false;
-}
-
-function closeSettingsView() {
-  settingsView.hidden = true;
-}
-
-settingsOpenBtn.addEventListener("click", openSettingsView);
-settingsBackBtn.addEventListener("click", closeSettingsView);
-
-// A click that lands on the backdrop rather than the panel closes it. The
-// panel itself stops nothing - it just isn't the backdrop.
-settingsView.addEventListener("click", (e) => {
-  if (e.target === settingsView) closeSettingsView();
-});
+settingsOpenBtn.addEventListener("click", () => showView("settings"));
+settingsBackBtn.addEventListener("click", () => showView("main"));
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !settingsView.hidden) closeSettingsView();
+  if (e.key === "Escape" && !settingsView.hidden) showView("main");
 });
 
 // --- Play / loop -----------------------------------------------------
@@ -1625,12 +1623,61 @@ function choiceControl(key, options) {
       buildReferenceTable();
       renderInputs();
       renderResults();
+      // The chakra chart's detail panel shows a scale like any other, so it
+      // follows the numbering choice like any other - it just happens to be
+      // the one list on the same page as the control that changed it.
+      melaChart?.refresh();
     });
     label.appendChild(radio);
     label.append(` ${opt.text}`);
     span.appendChild(label);
   }
   return span;
+}
+
+// --- Melakarta chakra chart ---------------------------------------------
+// The chart itself lives in mela-chart.js; this is only the wiring. Both
+// scraped files are optional at runtime - a failed fetch leaves the chakras
+// unnamed and the katapayadi decode hidden, and nothing else changes, because
+// everything else on that page is arithmetic over data/ragas.json.
+let melaChart = null;
+let chakras = null;
+let katapayadi = null;
+
+async function loadOptionalJson(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function buildMelaChart() {
+  const melaRagas = new Map();
+  for (const raga of ragas) {
+    if (raga.is_melakarta && raga.mela != null && !melaRagas.has(raga.mela)) melaRagas.set(raga.mela, raga);
+  }
+
+  // specs/04's verification check 2, run against the data actually shipped
+  // rather than only in the scraper: if the arithmetic and the stored scales
+  // ever disagree, one of them is wrong and the chart is the last place that
+  // should be quiet about it.
+  const failures = checkAgainstStored(melaRagas);
+  if (failures.length) console.warn("Melakarta derivation disagrees with data/ragas.json:", failures);
+
+  melaChart = mountMelaChart(document.getElementById("mela-block"), {
+    melaRagas,
+    getChakras: () => chakras,
+    getKatapayadi: () => katapayadi,
+    // The chart's detail panel is a results list of exactly one row, so it
+    // gets the row rendering, the per-row play button and the activeRowPlayer
+    // mutual exclusion for nothing. `loadable` is right here in a way it
+    // isn't in the note finder: you picked this raga by name, you didn't
+    // build the selection it would overwrite.
+    renderRow: (raga) => renderRow(raga, null, noMatchedSets(), false, { loadable: true }),
+  });
 }
 
 function buildReferenceTable() {
@@ -1712,6 +1759,14 @@ async function init() {
   renderResults();
   nameIndex = buildNameIndex(ragas);
   buildNameList();
+  buildMelaChart();
+
+  // Last, and not awaited alongside ragas.json: the chart is fully usable
+  // without either of these, so a slow or missing scrape must not hold up the
+  // page or take the rest of it down with it.
+  [chakras, katapayadi] = await Promise.all([loadOptionalJson("../data/melakarta_chakras.json"), loadOptionalJson("../data/katapayadi.json")]);
+  renderKatapayadiReference(document.getElementById("kata-reference"), katapayadi);
+  melaChart.refresh();
 }
 
 init();

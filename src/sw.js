@@ -10,7 +10,7 @@
 // out of. Network-first means anyone with connectivity always gets
 // current content; the cache exists purely for when they don't have any.
 
-const CACHE_NAME = "raga-finder-v5"; // bump whenever the precache list below changes
+const CACHE_NAME = "raga-finder-v8"; // bump whenever the precache list below changes
 
 const PRECACHE_URLS = [
   "./index.html",
@@ -20,6 +20,8 @@ const PRECACHE_URLS = [
   "./js/ragas.js",
   "./js/audio.js",
   "./js/notation.js",
+  "./js/melakarta.js",
+  "./js/mela-chart.js",
   // One entry per input style. cache.addAll() is all-or-nothing - a single
   // 404 rejects the whole install and leaves the app with no offline copy
   // at all - so this list has to track src/js/inputs/ exactly. It listed
@@ -35,6 +37,13 @@ const PRECACHE_URLS = [
   "./fonts/gentium-book-plus-swara.woff2",
   "./fonts/forum-headings.woff2",
   "../data/ragas.json",
+  // The chakra chart's two scraped files. They landed with this bump; both
+  // were held out of the list until they existed on disk, because naming a
+  // file that does not exist rejects the whole cache.addAll() and leaves the
+  // installed app with no offline copy of anything - exactly how precaching
+  // got silently disabled once before, by a stale assembler.js entry.
+  "../data/melakarta_chakras.json",
+  "../data/katapayadi.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   // Not decoration: this one is the search button's entire glyph, painted as a

@@ -6,8 +6,44 @@ const SA_HZ = 220; // ~A3, a comfortable low Sa reference
 
 let ctx = null;
 function getContext() {
-  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (!ctx) {
+    // Called from a click handler, so we're inside a user gesture - the only
+    // moment iOS lets a context leave the suspended state.
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    claimPlaybackSession();
+    primeForIOS(ctx);
+  }
   return ctx;
+}
+
+// iOS puts a page's Web Audio output in the "ambient" audio session: it is
+// silenced by the iPhone's Ring/Silent switch and follows the ringer volume
+// rather than the media volume. Android has no such switch, and neither does
+// an iPad - which is exactly the split we see. Safari 16.4+ lets a page ask
+// for the "playback" session instead, which ignores the switch and uses the
+// media volume. Claimed only once the user has asked for a tone, so merely
+// opening the app doesn't interrupt whatever they were listening to.
+function claimPlaybackSession() {
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = "playback";
+  } catch {
+    // Read-only or unsupported: nothing to fall back to, tones still work
+    // whenever the ringer is up.
+  }
+}
+
+// Older WebKit only really unlocks a context once a source node has been
+// started on it inside the gesture; a bare resume() isn't always enough.
+// One inaudible sample is the cheapest thing that counts.
+function primeForIOS(audioCtx) {
+  try {
+    const source = audioCtx.createBufferSource();
+    source.buffer = audioCtx.createBuffer(1, 1, audioCtx.sampleRate);
+    source.connect(audioCtx.destination);
+    source.start(0);
+  } catch {
+    // Non-fatal: the real tone below is still scheduled either way.
+  }
 }
 
 let muted = false;
@@ -38,8 +74,23 @@ export function playPianoTone(degree) {
   if (muted) return;
 
   const audioCtx = getContext();
-  if (audioCtx.state === "suspended") audioCtx.resume();
+  if (audioCtx.state === "running") {
+    scheduleTone(audioCtx, degree);
+    return;
+  }
 
+  // Suspended - the first tap of the session, or iOS having interrupted us
+  // while the app was backgrounded or a call came in. resume() is async, and
+  // notes scheduled against a still-suspended clock get dropped on iOS, so
+  // wait for it. resume() itself is called synchronously inside the click,
+  // which is what keeps the gesture valid.
+  // Promise.resolve wrapper: old WebKit's resume() returns undefined.
+  Promise.resolve(audioCtx.resume())
+    .then(() => scheduleTone(audioCtx, degree))
+    .catch(() => {});
+}
+
+function scheduleTone(audioCtx, degree) {
   const freq = frequencyForDegree(degree);
   const now = audioCtx.currentTime;
   const duration = 1.4;

@@ -9,8 +9,16 @@
        specs/02-swara-keyboard-finder.md's "Distribution" -->
   <link rel="manifest" href="manifest.json">
   <meta name="theme-color" content="#4a7dff">
-  <link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">
-  <link rel="icon" href="icons/favicon-16.png" sizes="16x16" type="image/png">
+  <!-- Full-size sources only, no 16/32 favicons. The mark is hairline linework,
+       so a purpose-made 32px bitmap of it came out no better than the browser's
+       own downscale of the 512 - both are an illegible smear at that size, so
+       shipping the small files bought nothing. What they did cost is every slot
+       that wants something *bigger* than 32px (bookmark tiles, a pinned
+       shortcut, the site-info panel): those took the largest <link> on offer and
+       upscaled a 32px bitmap into a blur, which is where the icon looked bad.
+       Offering 192 and 512 lets each slot downscale from real pixels instead. -->
+  <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+  <link rel="icon" href="icons/icon-512.png" sizes="512x512" type="image/png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
@@ -31,7 +39,7 @@
          and its accessible name - and if the image ever fails to load, the alt
          text falls back to the same Forum serif the heading used before. -->
     <h1 class="app-title"><img src="icons/logo-title.png" width="422" height="240" alt="SwaRāgā"></h1>
-    <button type="button" id="settings-open-btn" class="icon-btn" aria-label="Swara names &amp; label preferences" title="Swara names &amp; label preferences">
+    <button type="button" id="settings-open-btn" class="icon-btn" aria-label="Raga reference: melakarta chart &amp; swara names" title="Raga reference: melakarta chart &amp; swara names">
       <!-- Info "i" with a gear badge: the panel is a reference table *and* the
            one place a preference is set, and the plain "i" only advertised the
            first half. The badge is drawn over a disc of the button's own
@@ -169,26 +177,57 @@
   <ul id="results" class="results"></ul>
   </div>
 
+  <!-- A full view swapped in for #main-view, exactly like #search-view - not
+       the floating overlay this used to be. The chakra chart below is 72 cells
+       plus a detail panel; it needs the whole page, and a card hovering over a
+       live app was never going to hold it. See specs/04-melakarta-chakra-wheel.md. -->
   <div id="settings-view" hidden>
-    <div class="settings-panel">
-      <div class="settings-panel-header">
-        <h2>Swara names &amp; label preferences</h2>
-        <button type="button" id="settings-back-btn" class="settings-close" aria-label="Close" title="Close">&times;</button>
+    <div class="reference-page">
+      <div class="page-header">
+        <button type="button" id="settings-back-btn" class="icon-btn" aria-label="Back">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+        </button>
+        <h1>Raga Reference</h1>
       </div>
-    <table class="reference-table">
-    <thead>
-      <tr><th>Name</th><th>Code</th></tr>
-    </thead>
-    <tbody id="note-reference-body"></tbody>
-    </table>
-    <p class="label-prefs-intro">
-    Some schools number Gandhara/Nishada variants by pitch order (Shuddha=1, being lowest); others by frequency
-    of use instead, since Shuddha is rare/vivadi - pushing it to "3" and cycling Sadharana/Kaisiki and
-    Antara/Kakali down to "1" and "2". Pick your convention using the Shuddha Gandhara / Shuddha Nishada rows
-    above - the other rows in each family update to match. This choice changes every place a swara is shown
-    across the app, including each raga's own result further down - it's just a relabeling of the same scale,
-    not a change to what the scale is.
-    </p>
+
+      <!-- Collapsed by default: this page opens on the chart. The table is
+           still built at load and rebuilt on every preference change -
+           <details> hides its contents without unmounting them, so
+           buildReferenceTable() needs to know nothing about this. -->
+      <details class="ref-block">
+        <summary>Swara names &amp; numbering</summary>
+        <table class="reference-table">
+        <thead>
+          <tr><th>Name</th><th>Code</th></tr>
+        </thead>
+        <tbody id="note-reference-body"></tbody>
+        </table>
+        <p class="label-prefs-intro">
+        Some schools number Gandhara/Nishada variants by pitch order (Shuddha=1, being lowest); others by frequency
+        of use instead, since Shuddha is rare/vivadi - pushing it to "3" and cycling Sadharana/Kaisiki and
+        Antara/Kakali down to "1" and "2". Pick your convention using the Shuddha Gandhara / Shuddha Nishada rows
+        above - the other rows in each family update to match. This choice changes every place a swara is shown
+        across the app, including each raga's own result further down - it's just a relabeling of the same scale,
+        not a change to what the scale is.
+        </p>
+      </details>
+
+      <section class="mela-block" id="mela-block">
+        <h2>The 72 melakartas</h2>
+        <p class="mela-intro">
+        Every parent scale, arranged so its own recipe is readable off the chart: the sector fixes
+        Rishabha and Gandhara, the ring fixes Dhaivata and Nishada, and which side of the line you
+        are on fixes Madhyama. Sa, Pa and the upper Sa never vary, which is why the middle is empty.
+        </p>
+        <div class="mela-chart"></div>
+        <div class="mela-legend-wrap"></div>
+        <div class="mela-detail"></div>
+      </section>
+
+      <details class="ref-block" id="kata-block" hidden>
+        <summary>Katapayadi sankhya - the letter table</summary>
+        <div id="kata-reference"></div>
+      </details>
     </div>
   </div>
 

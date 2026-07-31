@@ -1,0 +1,1270 @@
+{
+  "table": {
+    "ba": 3,
+    "bha": 4,
+    "ca": 6,
+    "cha": 7,
+    "da": 8,
+    "dha": 9,
+    "ga": 3,
+    "gha": 4,
+    "ha": 8,
+    "ja": 8,
+    "jha": 9,
+    "ka": 1,
+    "kha": 2,
+    "la": 3,
+    "ma": 5,
+    "na": 0,
+    "nga": 5,
+    "nya": 0,
+    "pa": 1,
+    "pha": 2,
+    "ra": 2,
+    "sa": 7,
+    "ta": 6,
+    "tha": 7,
+    "va": 4,
+    "ya": 1,
+    "śa": 5,
+    "ḍa": 3,
+    "ḍha": 4,
+    "ṇa": 5,
+    "ṣa": 6,
+    "ṭa": 1,
+    "ṭha": 2
+  },
+  "rules": [
+    "Consonants map to digits in four groups - ka-, ta-, pa-, ya- (the system's name is those four plus adi, \"and so on\").",
+    "na, nya and standalone vowels are zero.",
+    "In a conjunct consonant, only the last consonant counts.",
+    "A consonant with no vowel after it is ignored.",
+    "Digits are read right to left - ankanam vamato gatih, \"numbers go leftward\"."
+  ],
+  "decodes": [
+    {
+      "mela": 1,
+      "name": "Kanakangi",
+      "syllables": [
+        {
+          "text": "ka",
+          "digit": 1
+        },
+        {
+          "text": "na",
+          "digit": 0
+        }
+      ],
+      "value": 1,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 2,
+      "name": "Ratnangi",
+      "syllables": [
+        {
+          "text": "ra",
+          "digit": 2
+        },
+        {
+          "text": "na",
+          "digit": 0
+        }
+      ],
+      "value": 2,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 3,
+      "name": "Ganamurti",
+      "syllables": [
+        {
+          "text": "ga",
+          "digit": 3
+        },
+        {
+          "text": "na",
+          "digit": 0
+        }
+      ],
+      "value": 3,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 4,
+      "name": "Vanaspati",
+      "syllables": [
+        {
+          "text": "va",
+          "digit": 4
+        },
+        {
+          "text": "na",
+          "digit": 0
+        }
+      ],
+      "value": 4,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 5,
+      "name": "Manavati",
+      "syllables": [
+        {
+          "text": "ma",
+          "digit": 5
+        },
+        {
+          "text": "na",
+          "digit": 0
+        }
+      ],
+      "value": 5,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 6,
+      "name": "Tanarupi",
+      "syllables": [
+        {
+          "text": "ta",
+          "digit": 6
+        },
+        {
+          "text": "na",
+          "digit": 0
+        }
+      ],
+      "value": 6,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 7,
+      "name": "Senavati",
+      "syllables": [
+        {
+          "text": "se",
+          "digit": 7
+        },
+        {
+          "text": "na",
+          "digit": 0
+        }
+      ],
+      "value": 7,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 8,
+      "name": "Hanumatodi",
+      "syllables": [
+        {
+          "text": "ha",
+          "digit": 8
+        },
+        {
+          "text": "nu",
+          "digit": 0
+        }
+      ],
+      "value": 8,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 9,
+      "name": "Dhenuka",
+      "syllables": [
+        {
+          "text": "dhe",
+          "digit": 9
+        },
+        {
+          "text": "nu",
+          "digit": 0
+        }
+      ],
+      "value": 9,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 10,
+      "name": "Natakapriya",
+      "syllables": [
+        {
+          "text": "na",
+          "digit": 0
+        },
+        {
+          "text": "ta",
+          "digit": 1
+        }
+      ],
+      "value": 10,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 11,
+      "name": "Kokilapriya",
+      "syllables": [
+        {
+          "text": "ko",
+          "digit": 1
+        },
+        {
+          "text": "ki",
+          "digit": 1
+        }
+      ],
+      "value": 11,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 12,
+      "name": "Rupavati",
+      "syllables": [
+        {
+          "text": "ru",
+          "digit": 2
+        },
+        {
+          "text": "pa",
+          "digit": 1
+        }
+      ],
+      "value": 12,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 13,
+      "name": "Gayakapriya",
+      "syllables": [
+        {
+          "text": "ga",
+          "digit": 3
+        },
+        {
+          "text": "ya",
+          "digit": 1
+        }
+      ],
+      "value": 13,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 14,
+      "name": "Vakulabharanam",
+      "syllables": [
+        {
+          "text": "va",
+          "digit": 4
+        },
+        {
+          "text": "ku",
+          "digit": 1
+        }
+      ],
+      "value": 14,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 15,
+      "name": "Mayamalavagowla",
+      "syllables": [
+        {
+          "text": "ma",
+          "digit": 5
+        },
+        {
+          "text": "ya",
+          "digit": 1
+        }
+      ],
+      "value": 15,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 16,
+      "name": "Chakravakam",
+      "syllables": [
+        {
+          "text": "cha",
+          "digit": 6
+        },
+        {
+          "text": "ra",
+          "digit": 2
+        }
+      ],
+      "value": 26,
+      "matches": false,
+      "ambiguous": true
+    },
+    {
+      "mela": 17,
+      "name": "Suryakantam",
+      "syllables": [
+        {
+          "text": "su",
+          "digit": 7
+        },
+        {
+          "text": "ya",
+          "digit": 1
+        }
+      ],
+      "value": 17,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 18,
+      "name": "Hatakambari",
+      "syllables": [
+        {
+          "text": "ha",
+          "digit": 8
+        },
+        {
+          "text": "ta",
+          "digit": 1
+        }
+      ],
+      "value": 18,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 19,
+      "name": "Jhankaradhvani",
+      "syllables": [
+        {
+          "text": "jha",
+          "digit": 9
+        },
+        {
+          "text": "ka",
+          "digit": 1
+        }
+      ],
+      "value": 19,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 20,
+      "name": "Natabhairavi",
+      "syllables": [
+        {
+          "text": "na",
+          "digit": 0
+        },
+        {
+          "text": "ta",
+          "digit": 1
+        }
+      ],
+      "value": 10,
+      "matches": false,
+      "ambiguous": true
+    },
+    {
+      "mela": 21,
+      "name": "Kiravani",
+      "syllables": [
+        {
+          "text": "ki",
+          "digit": 1
+        },
+        {
+          "text": "ra",
+          "digit": 2
+        }
+      ],
+      "value": 21,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 22,
+      "name": "Kharaharapriya",
+      "syllables": [
+        {
+          "text": "kha",
+          "digit": 2
+        },
+        {
+          "text": "ra",
+          "digit": 2
+        }
+      ],
+      "value": 22,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 23,
+      "name": "Gourimanohari",
+      "syllables": [
+        {
+          "text": "gou",
+          "digit": 3
+        },
+        {
+          "text": "ri",
+          "digit": 2
+        }
+      ],
+      "value": 23,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 24,
+      "name": "Varunapriya",
+      "syllables": [
+        {
+          "text": "va",
+          "digit": 4
+        },
+        {
+          "text": "ru",
+          "digit": 2
+        }
+      ],
+      "value": 24,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 25,
+      "name": "Mararanjani",
+      "syllables": [
+        {
+          "text": "ma",
+          "digit": 5
+        },
+        {
+          "text": "ra",
+          "digit": 2
+        }
+      ],
+      "value": 25,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 26,
+      "name": "Charukesi",
+      "syllables": [
+        {
+          "text": "cha",
+          "digit": 6
+        },
+        {
+          "text": "ru",
+          "digit": 2
+        }
+      ],
+      "value": 26,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 27,
+      "name": "Sarasangi",
+      "syllables": [
+        {
+          "text": "sa",
+          "digit": 7
+        },
+        {
+          "text": "ra",
+          "digit": 2
+        }
+      ],
+      "value": 27,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 28,
+      "name": "Harikambhoji",
+      "syllables": [
+        {
+          "text": "ha",
+          "digit": 8
+        },
+        {
+          "text": "ri",
+          "digit": 2
+        }
+      ],
+      "value": 28,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 29,
+      "name": "Dhirasankarabharanam",
+      "syllables": [
+        {
+          "text": "dhi",
+          "digit": 9
+        },
+        {
+          "text": "ra",
+          "digit": 2
+        }
+      ],
+      "value": 29,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 30,
+      "name": "Naganandini",
+      "syllables": [
+        {
+          "text": "na",
+          "digit": 0
+        },
+        {
+          "text": "ga",
+          "digit": 3
+        }
+      ],
+      "value": 30,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 31,
+      "name": "Yagapriya",
+      "syllables": [
+        {
+          "text": "ya",
+          "digit": 1
+        },
+        {
+          "text": "ga",
+          "digit": 3
+        }
+      ],
+      "value": 31,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 32,
+      "name": "Ragavardhini",
+      "syllables": [
+        {
+          "text": "ra",
+          "digit": 2
+        },
+        {
+          "text": "ga",
+          "digit": 3
+        }
+      ],
+      "value": 32,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 33,
+      "name": "Gangeyabhusani",
+      "syllables": [
+        {
+          "text": "ga",
+          "digit": 3
+        },
+        {
+          "text": "ge",
+          "digit": 3
+        }
+      ],
+      "value": 33,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 34,
+      "name": "Vagadhisvari",
+      "syllables": [
+        {
+          "text": "va",
+          "digit": 4
+        },
+        {
+          "text": "ga",
+          "digit": 3
+        }
+      ],
+      "value": 34,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 35,
+      "name": "Sulini",
+      "syllables": [
+        {
+          "text": "su",
+          "digit": 5
+        },
+        {
+          "text": "li",
+          "digit": 3
+        }
+      ],
+      "value": 35,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 36,
+      "name": "Chalanata",
+      "syllables": [
+        {
+          "text": "cha",
+          "digit": 6
+        },
+        {
+          "text": "la",
+          "digit": 3
+        }
+      ],
+      "value": 36,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 37,
+      "name": "Salagam",
+      "syllables": [
+        {
+          "text": "sa",
+          "digit": 7
+        },
+        {
+          "text": "la",
+          "digit": 3
+        }
+      ],
+      "value": 37,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 38,
+      "name": "Jalarnavam",
+      "syllables": [
+        {
+          "text": "ja",
+          "digit": 8
+        },
+        {
+          "text": "la",
+          "digit": 3
+        }
+      ],
+      "value": 38,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 39,
+      "name": "Jhalavarali",
+      "syllables": [
+        {
+          "text": "jha",
+          "digit": 9
+        },
+        {
+          "text": "la",
+          "digit": 3
+        }
+      ],
+      "value": 39,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 40,
+      "name": "Navanitam",
+      "syllables": [
+        {
+          "text": "na",
+          "digit": 0
+        },
+        {
+          "text": "va",
+          "digit": 4
+        }
+      ],
+      "value": 40,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 41,
+      "name": "Pavani",
+      "syllables": [
+        {
+          "text": "pa",
+          "digit": 1
+        },
+        {
+          "text": "va",
+          "digit": 4
+        }
+      ],
+      "value": 41,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 42,
+      "name": "Raghupriya",
+      "syllables": [
+        {
+          "text": "ra",
+          "digit": 2
+        },
+        {
+          "text": "ghu",
+          "digit": 4
+        }
+      ],
+      "value": 42,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 43,
+      "name": "Gavambhodi",
+      "syllables": [
+        {
+          "text": "ga",
+          "digit": 3
+        },
+        {
+          "text": "va",
+          "digit": 4
+        }
+      ],
+      "value": 43,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 44,
+      "name": "Bhavapriya",
+      "syllables": [
+        {
+          "text": "bha",
+          "digit": 4
+        },
+        {
+          "text": "va",
+          "digit": 4
+        }
+      ],
+      "value": 44,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 45,
+      "name": "Subhapantuvarali",
+      "syllables": [
+        {
+          "text": "su",
+          "digit": 5
+        },
+        {
+          "text": "bha",
+          "digit": 4
+        }
+      ],
+      "value": 45,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 46,
+      "name": "Shadvidamargini",
+      "syllables": [
+        {
+          "text": "sha",
+          "digit": 6
+        },
+        {
+          "text": "vi",
+          "digit": 4
+        }
+      ],
+      "value": 46,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 47,
+      "name": "Suvarnangi",
+      "syllables": [
+        {
+          "text": "su",
+          "digit": 7
+        },
+        {
+          "text": "va",
+          "digit": 4
+        }
+      ],
+      "value": 47,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 48,
+      "name": "Divyamani",
+      "syllables": [
+        {
+          "text": "di",
+          "digit": 3
+        },
+        {
+          "text": "ya",
+          "digit": 1
+        }
+      ],
+      "value": 13,
+      "matches": false,
+      "ambiguous": true
+    },
+    {
+      "mela": 49,
+      "name": "Dhavalambari",
+      "syllables": [
+        {
+          "text": "dha",
+          "digit": 9
+        },
+        {
+          "text": "va",
+          "digit": 4
+        }
+      ],
+      "value": 49,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 50,
+      "name": "Namanarayani",
+      "syllables": [
+        {
+          "text": "na",
+          "digit": 0
+        },
+        {
+          "text": "ma",
+          "digit": 5
+        }
+      ],
+      "value": 50,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 51,
+      "name": "Kamavardhini",
+      "syllables": [
+        {
+          "text": "ka",
+          "digit": 1
+        },
+        {
+          "text": "ma",
+          "digit": 5
+        }
+      ],
+      "value": 51,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 52,
+      "name": "Ramapriya",
+      "syllables": [
+        {
+          "text": "ra",
+          "digit": 2
+        },
+        {
+          "text": "ma",
+          "digit": 5
+        }
+      ],
+      "value": 52,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 53,
+      "name": "Gamanasrama",
+      "syllables": [
+        {
+          "text": "ga",
+          "digit": 3
+        },
+        {
+          "text": "ma",
+          "digit": 5
+        }
+      ],
+      "value": 53,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 54,
+      "name": "Visvambari",
+      "syllables": [
+        {
+          "text": "vi",
+          "digit": 4
+        },
+        {
+          "text": "va",
+          "digit": 4
+        }
+      ],
+      "value": 44,
+      "matches": false,
+      "ambiguous": false
+    },
+    {
+      "mela": 55,
+      "name": "Samalangi",
+      "syllables": [
+        {
+          "text": "sa",
+          "digit": 5
+        },
+        {
+          "text": "ma",
+          "digit": 5
+        }
+      ],
+      "value": 55,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 56,
+      "name": "Sanmukhapriya",
+      "syllables": [
+        {
+          "text": "sa",
+          "digit": 6
+        },
+        {
+          "text": "mu",
+          "digit": 5
+        }
+      ],
+      "value": 56,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 57,
+      "name": "Simhendramadhyamam",
+      "syllables": [
+        {
+          "text": "si",
+          "digit": 5
+        },
+        {
+          "text": "he",
+          "digit": 8
+        }
+      ],
+      "value": 85,
+      "matches": false,
+      "ambiguous": true
+    },
+    {
+      "mela": 58,
+      "name": "Hemavati",
+      "syllables": [
+        {
+          "text": "he",
+          "digit": 8
+        },
+        {
+          "text": "ma",
+          "digit": 5
+        }
+      ],
+      "value": 58,
+      "matches": true,
+      "ambiguous": false
+    },
+    {
+      "mela": 59,
+      "name": "Dharmavati",
+      "syllables": [
+        {
+          "text": "dha",
+          "digit": 9
+        },
+        {
+          "text": "ma",
+          "digit": 5
+        }
+      ],
+      "value": 59,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 60,
+      "name": "Nitimati",
+      "syllables": [
+        {
+          "text": "ni",
+          "digit": 0
+        },
+        {
+          "text": "ti",
+          "digit": 6
+        }
+      ],
+      "value": 60,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 61,
+      "name": "Kantamani",
+      "syllables": [
+        {
+          "text": "ka",
+          "digit": 1
+        },
+        {
+          "text": "ta",
+          "digit": 6
+        }
+      ],
+      "value": 61,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 62,
+      "name": "Risabhapriya",
+      "syllables": [
+        {
+          "text": "ri",
+          "digit": 2
+        },
+        {
+          "text": "sa",
+          "digit": 6
+        }
+      ],
+      "value": 62,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 63,
+      "name": "Latangi",
+      "syllables": [
+        {
+          "text": "la",
+          "digit": 3
+        },
+        {
+          "text": "ta",
+          "digit": 6
+        }
+      ],
+      "value": 63,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 64,
+      "name": "Vachaspati",
+      "syllables": [
+        {
+          "text": "va",
+          "digit": 4
+        },
+        {
+          "text": "cha",
+          "digit": 6
+        }
+      ],
+      "value": 64,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 65,
+      "name": "Mechakalyani",
+      "syllables": [
+        {
+          "text": "me",
+          "digit": 5
+        },
+        {
+          "text": "cha",
+          "digit": 6
+        }
+      ],
+      "value": 65,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 66,
+      "name": "Chitrambari",
+      "syllables": [
+        {
+          "text": "chi",
+          "digit": 6
+        },
+        {
+          "text": "ra",
+          "digit": 2
+        }
+      ],
+      "value": 26,
+      "matches": false,
+      "ambiguous": true
+    },
+    {
+      "mela": 67,
+      "name": "Sucharitra",
+      "syllables": [
+        {
+          "text": "su",
+          "digit": 7
+        },
+        {
+          "text": "cha",
+          "digit": 6
+        }
+      ],
+      "value": 67,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 68,
+      "name": "Jyoti svarupini",
+      "syllables": [
+        {
+          "text": "yo",
+          "digit": 1
+        },
+        {
+          "text": "ti",
+          "digit": 1
+        }
+      ],
+      "value": 11,
+      "matches": false,
+      "ambiguous": true
+    },
+    {
+      "mela": 69,
+      "name": "Dhathuvardhani",
+      "syllables": [
+        {
+          "text": "dha",
+          "digit": 9
+        },
+        {
+          "text": "thu",
+          "digit": 6
+        }
+      ],
+      "value": 69,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 70,
+      "name": "Nasikabhusani",
+      "syllables": [
+        {
+          "text": "na",
+          "digit": 0
+        },
+        {
+          "text": "si",
+          "digit": 7
+        }
+      ],
+      "value": 70,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 71,
+      "name": "Kosalam",
+      "syllables": [
+        {
+          "text": "ko",
+          "digit": 1
+        },
+        {
+          "text": "sa",
+          "digit": 7
+        }
+      ],
+      "value": 71,
+      "matches": true,
+      "ambiguous": true
+    },
+    {
+      "mela": 72,
+      "name": "Rasikapriya",
+      "syllables": [
+        {
+          "text": "ra",
+          "digit": 2
+        },
+        {
+          "text": "si",
+          "digit": 7
+        }
+      ],
+      "value": 72,
+      "matches": true,
+      "ambiguous": true
+    }
+  ]
+}

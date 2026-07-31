@@ -83,6 +83,22 @@
   outline-offset: 2px;
 }
 
+/* iOS reserves a double-tap on any tappable element for zoom-to-fit, so two
+   quick taps on a piano key zoom the page instead of sounding the note twice -
+   and every tap also waits ~300ms to find out which it was. `manipulation`
+   gives up double-tap zoom on controls only; ordinary pinch-zoom and scrolling
+   are untouched, so nothing accessibility-relevant is lost (which is also why
+   `user-scalable=no` on the viewport is not the fix - iOS ignores it anyway).
+   Deliberately low specificity: the wheel and the drag tray override this with
+   `touch-action: none` where they need to own the gesture outright. */
+button,
+label,
+input,
+select,
+summary {
+  touch-action: manipulation;
+}
+
 body {
   font-family: system-ui, sans-serif;
   line-height: 1.5;
@@ -143,7 +159,7 @@ h1 {
 .app-title img {
   display: block;
   margin: 0 auto;
-  height: clamp(64px, 15vw, 104px);
+  height: clamp(77px, 18vw, 125px);
   width: auto;
 }
 
@@ -216,82 +232,46 @@ h1 {
   mask-position: center;
 }
 
-#search-back-btn {
+/* Both of the secondary views open with a back arrow in the same place. */
+#search-back-btn,
+#settings-back-btn {
   left: 0;
 }
 
-/* --- Swara-names panel --------------------------------------------------
-   An information panel: the note-name reference and the one preference that
-   belongs with it (which numbering convention to use). It floats over the
-   main page rather than replacing it, with no dimming scrim, so the label
-   change you just made is visible on the widget behind while you are still
-   reading the table that explains it.
-
-   Full-viewport backdrop, so a click anywhere off the panel closes it - the
-   page beneath stays visible but isn't clickable through, which keeps "am I
-   reading the reference or using the app" unambiguous. */
-#settings-view {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  overflow-y: auto;
-  padding: 1rem;
-  overscroll-behavior: contain;
-}
-
+/* --- Reference page -----------------------------------------------------
+   The note-name reference, the numbering preference, and the melakarta chakra
+   chart. This was a floating overlay while it was only the first two; the
+   chart is 72 cells plus a detail panel and wants the whole width, so it is
+   an ordinary view now, swapped in for #main-view exactly like #search-view.
+   Its <h1> takes the global Forum heading rule, same as "Search Ragas". */
 #settings-view[hidden] {
   display: none;
 }
 
-/* Opaque and shadowed, since it has the live page immediately behind it
-   rather than a darkened one - without both it would read as part of the
-   page rather than above it. */
-.settings-panel {
-  max-width: 700px;
+.reference-page {
+  max-width: 760px;
   margin: 0 auto;
-  padding: 0.6rem 1rem 0.9rem;
-  border: 1px solid var(--card-border);
-  border-radius: 12px;
-  background: canvas;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35), 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 
-.settings-panel-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.4rem;
-}
-
-.settings-panel-header h2 {
-  font-family: "Forum", Georgia, serif;
-  font-size: 1.25rem;
-  font-weight: 400;
-  letter-spacing: 0.02em;
-  margin: 0;
-}
-
-/* Not .icon-btn: that one is absolutely positioned against a .page-header. */
-.settings-close {
-  flex: none;
-  width: 2rem;
-  height: 2rem;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.4rem;
-  line-height: 1;
-  font-family: inherit;
+/* Both collapsed by default: the page opens on the chart, and the table and
+   the letter table are things you go looking for rather than things you read
+   every time. Same idiom and the same summary styling as .controls-panel. */
+.ref-block {
+  margin: 0 0 1.25rem;
   border: 1px solid var(--card-border);
   border-radius: 8px;
+  padding: 0.6rem 0.9rem;
   background: canvas;
-  color: canvastext;
-  cursor: pointer;
+  box-shadow: var(--card-shadow);
 }
 
-.settings-close:hover {
-  border-color: var(--accent);
+.ref-block > summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.ref-block > summary:hover {
   color: var(--accent);
 }
 
@@ -1294,6 +1274,17 @@ h1 {
   --match-fg: oklch(0.38 0.06 152);
   --mela-bg: oklch(0.8 0.115 78);
   --mela-fg: oklch(0.28 0.06 78);
+  /* Chakra-chart cell tints, and theme-aware for the same reason --chip-idle
+     is: the light theme needs roughly twice the mix to read as the same
+     weight. --cell-tint is the innermost ring, --cell-step what each ring
+     outward adds. The floor is high and the step deliberately shallow: a
+     faint innermost ring washes the sector hues out to the point where
+     neighbours are indistinguishable, and the ring axis is labelled on the
+     chart anyway, so the ramp only has to reinforce position, not carry it. */
+  --cell-tint: 0.3;
+  --cell-step: 0.035;
+  --cell-hover: 0.62;
+  --cell-selected: 0.85;
 }
 
 /* Dark-theme mixes: see the comment above for why these differ. */
@@ -1306,6 +1297,10 @@ h1 {
     --match-fg: oklch(0.9 0.03 152);
     --mela-bg: oklch(0.72 0.13 78);
     --mela-fg: oklch(0.24 0.05 78);
+    --cell-tint: 0.22;
+    --cell-step: 0.026;
+    --cell-hover: 0.45;
+    --cell-selected: 0.62;
   }
 }
 
@@ -1317,12 +1312,20 @@ h1 {
   --match-fg: oklch(0.9 0.03 152);
   --mela-bg: oklch(0.72 0.13 78);
   --mela-fg: oklch(0.24 0.05 78);
+  --cell-tint: 0.22;
+  --cell-step: 0.026;
+  --cell-hover: 0.45;
+  --cell-selected: 0.62;
 }
 
 :root[data-theme="light"] {
   --sl: 0.645;
   --chip-idle: 42%;
   --chip-hover: 62%;
+  --cell-tint: 0.3;
+  --cell-step: 0.035;
+  --cell-hover: 0.62;
+  --cell-selected: 0.85;
   --match-bg: oklch(0.93 0.055 152);
   --match-fg: oklch(0.38 0.06 152);
   --mela-bg: oklch(0.8 0.115 78);
@@ -1353,6 +1356,40 @@ h1 {
   --f-N-lo: oklch(calc(var(--sl) - 0.055) 0.085 270);
   --f-N-mid: oklch(var(--sl) 0.085 270);
   --f-N-hi: oklch(calc(var(--sl) + 0.055) 0.085 270);
+
+  /* Palette D - the melakarta chakra chart, and deliberately NOT the swara
+     families above. The swara palette answers "which note is this"; nothing on
+     that chart is a note you press, and borrowing the note hues there made the
+     sectors nearly indistinguishable, because a sector's colour was mixed from
+     its own R and G - which meant chakra k and chakra k+6 came out identical
+     (they differ only in Madhyama) and the low-opacity gradient flattened the
+     rest into one warm smear.
+
+     So colour encodes exactly one thing: the Rishabha-Gandhara combination,
+     one hue each, in the ascending order of RG_COMBOS in melakarta.js. There
+     are six, not twelve, and that is the point - chakra k and chakra k+6 are
+     diametrically opposite on the chart and share their R-G pair exactly,
+     differing only in Madhyama, so they are given the *same* colour rather
+     than two tones of one. The pairing is then readable straight off the
+     chart. Which half you are in is carried by .mela-half-band, the divider
+     and the hub labels instead, none of which touch a cell's colour.
+
+     Lightness is constant across all six, as it is across the swara palette
+     and for the same reason: neighbouring sectors must not look louder than
+     each other, only different. So they separate by hue alone, the hues are
+     spaced at least 50 degrees apart, and the chroma is real rather than
+     token - measured on the composited cell rather than on these values,
+     because that is what the eye gets. An earlier version at 0.075 chroma put
+     two adjacent sectors on the innermost ring 0.7 OKLab units apart, below
+     the point at which anyone can see a difference at all.
+
+     Off the same shared --sl as the swara palette, so it follows the theme. */
+  --mela-c-0: oklch(calc(var(--sl) + 0.02) 0.13 20);
+  --mela-c-1: oklch(calc(var(--sl) + 0.02) 0.13 70);
+  --mela-c-2: oklch(calc(var(--sl) + 0.02) 0.13 120);
+  --mela-c-3: oklch(calc(var(--sl) + 0.02) 0.13 190);
+  --mela-c-4: oklch(calc(var(--sl) + 0.02) 0.13 250);
+  --mela-c-5: oklch(calc(var(--sl) + 0.02) 0.13 310);
 
   /* Palette A - Ember to Slate. One continuous hue arc, 25 to 250 in equal
      steps, with chroma dipped through the middle so the yellow-greens go
@@ -2051,4 +2088,299 @@ h1 {
   cursor: pointer;
   white-space: nowrap;
   font-weight: 600;
+}
+
+/* --- Melakarta chakra chart ---------------------------------------------
+   See specs/04-melakarta-chakra-wheel.md. Everything inside the SVG is sized
+   in viewBox units, so the whole chart scales as one piece and there is no
+   breakpoint anywhere in here - what changes with the screen is only how big
+   it all is, never which parts are drawn. */
+.mela-block h2 {
+  font-family: "Forum", Georgia, serif;
+  font-size: 1.2rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  margin: 0 0 0.4rem;
+}
+
+.mela-intro {
+  font-size: 0.85rem;
+  opacity: 0.8;
+  margin: 0 0 0.9rem;
+}
+
+/* Bleeds into the body's own 1rem side padding. Worth the special case: at a
+   320px viewport that is the difference between a 288px and a 320px chart, and
+   everything inside it is sized in viewBox units, so 11% wider is 11% more
+   legible on exactly the screen where legibility is tightest. */
+.mela-chart {
+  width: calc(100% + 2rem);
+  margin-inline: -1rem;
+}
+
+.mela-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* Landscape guard: without it a short, wide window gives a chart taller than
+     the screen with the detail panel pushed off the bottom. */
+  max-height: 82vh;
+  overflow: visible;
+}
+
+/* What each axis means, in words. The pairs themselves are on the chart. */
+.mela-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.2rem 1rem;
+  margin: 0.5rem 0 0;
+  font-size: 0.78rem;
+  opacity: 0.8;
+}
+
+.mela-cell {
+  stroke: var(--card-border);
+  stroke-width: 1;
+  cursor: pointer;
+  /* Same reason the wheel's nodes have it: without this an iOS double-tap on
+     a cell zooms the page instead of registering as two taps. */
+  touch-action: manipulation;
+}
+
+/* The hemispheres, themed as hemispheres. An arc band behind each half's
+   chakra labels, in neutral tones rather than hues - it has to read as "which
+   side of the line am I on" without competing with the six R-G hues in the
+   cells, whose whole job now is to match across the diameter. */
+   The hub carries the same two tones on the same diameter, so each hemisphere
+   is tinted continuously from the centre out to the rim and the M1/M2 labels
+   sit on their own half's ground. */
+.mela-half-band,
+.mela-hub-half {
+  stroke: none;
+}
+
+.mela-half-band.half-m1,
+.mela-hub-half.half-m1 {
+  fill: color-mix(in srgb, transparent, canvastext 5%);
+}
+
+.mela-half-band.half-m2,
+.mela-hub-half.half-m2 {
+  fill: color-mix(in srgb, transparent, canvastext 13%);
+}
+
+/* The ring ramp. Position is the one axis with no room for a label inside each
+   cell, so it is carried by depth of tint instead - inner rings palest. */
+.mela-cell.ring-0 {
+  fill-opacity: var(--cell-tint);
+}
+
+.mela-cell.ring-1 {
+  fill-opacity: calc(var(--cell-tint) + 1 * var(--cell-step));
+}
+
+.mela-cell.ring-2 {
+  fill-opacity: calc(var(--cell-tint) + 2 * var(--cell-step));
+}
+
+.mela-cell.ring-3 {
+  fill-opacity: calc(var(--cell-tint) + 3 * var(--cell-step));
+}
+
+.mela-cell.ring-4 {
+  fill-opacity: calc(var(--cell-tint) + 4 * var(--cell-step));
+}
+
+.mela-cell.ring-5 {
+  fill-opacity: calc(var(--cell-tint) + 5 * var(--cell-step));
+}
+
+/* Both outrank the ring rules on specificity, which is what makes hover and
+   selection visible on the palest inner ring as well as the deepest outer. */
+.mela-cell.mela-cell:hover {
+  fill-opacity: var(--cell-hover);
+}
+
+.mela-cell.is-selected,
+.mela-cell.is-selected:hover {
+  fill-opacity: var(--cell-selected);
+}
+
+.mela-cell.is-selected,
+.mela-cell:focus-visible {
+  stroke: var(--accent);
+  stroke-width: 4;
+  outline: none;
+}
+
+/* Every size in this block is in viewBox units, which the chart scales to
+   whatever width it gets. They are tuned so that at a 320px viewport - the
+   narrowest the app supports, where the chart renders about 320px wide -
+   nothing on it falls below roughly 10 CSS pixels. */
+.mela-numbers text {
+  font-size: 34px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  fill: canvastext;
+  pointer-events: none;
+}
+
+/* The M1/M2 boundary. Vertical by construction - chakras 1-6 fill the right
+   half because the sectors are laid out clockwise from twelve o'clock. */
+.mela-divider {
+  stroke: canvastext;
+  stroke-width: 3;
+  opacity: 0.75;
+}
+
+.mela-ring-axis rect {
+  fill: canvas;
+  stroke: var(--card-border);
+}
+
+.mela-ring-axis text {
+  font-size: 26px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  fill: canvastext;
+  opacity: 0.9;
+}
+
+.mela-rim text {
+  font-size: 34px;
+  text-anchor: middle;
+  /* Centred on its own radius, not sitting on an alphabetic baseline: the
+     tangential text flips through 180 degrees in the lower half of the wheel,
+     which flips which way the ascenders point, and with a normal baseline that
+     put the R-G pair hard against the cells on one side of the chart and
+     comfortably clear on the other. */
+  dominant-baseline: central;
+  fill: canvastext;
+}
+
+/* Has to out-specify `.mela-rim text` above, which is 0,1,1 - as a bare class
+   this rule lost, and the R-G pair silently rendered at the chakra name's
+   size, which is what pushed it down onto the outermost cell numbers. */
+.mela-rim .mela-rim-pair {
+  font-size: 29px;
+  opacity: 0.75;
+}
+
+/* Set vertically inside the hub, one either side of the M1/M2 divider. */
+.mela-half-label {
+  font-size: 29px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  fill: canvastext;
+  opacity: 0.8;
+}
+
+/* Outline only now - the fill is the two half discs underneath it. */
+.mela-hub {
+  fill: none;
+  stroke: var(--card-border);
+}
+
+/* The divider runs the full diameter, so it passes behind everything in the
+   hub. These are drawn after it and knock a hole in it: paint-order puts the
+   stroke underneath the fill, so each glyph carries a halo of the page's own
+   background and the line breaks cleanly around the words instead of running
+   through them. */
+.mela-hub-notes,
+.mela-hub-sub,
+.mela-half-label {
+  paint-order: stroke fill;
+  stroke: canvas;
+  stroke-width: 6px;
+  stroke-linejoin: round;
+}
+
+/* Swara names, so they take the swara face like every other one in the app -
+   it is the face that carries the sthayi dot on the upper Sa. */
+.mela-hub-notes {
+  font-size: 36px;
+  text-anchor: middle;
+  fill: canvastext;
+  font-family: var(--font-swara);
+}
+
+.mela-hub-sub {
+  font-size: 23px;
+  text-anchor: middle;
+  fill: canvastext;
+  opacity: 0.6;
+}
+
+.mela-detail {
+  margin: 1rem 0 0;
+}
+
+.mela-detail-empty,
+.mela-detail-meta {
+  font-size: 0.85rem;
+  opacity: 0.8;
+  margin: 0 0 0.5rem;
+}
+
+/* The scraped sentence explaining what the chakra's name counts. */
+.mela-chakra-gloss {
+  font-size: 0.8rem;
+  opacity: 0.7;
+  font-style: italic;
+  margin: 0 0 0.6rem;
+}
+
+/* The decode, laid out so the rule is visible rather than asserted: one chip
+   per syllable with the digit it contributes, then the reversal. */
+.mela-decode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  margin: 0 0 0.6rem;
+}
+
+.mela-decode-label {
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  opacity: 0.65;
+  font-weight: 600;
+}
+
+.kata-syllable {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+}
+
+.kata-digit {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.kata-arrow {
+  opacity: 0.6;
+}
+
+.kata-note,
+.kata-footnote {
+  font-size: 0.78rem;
+  opacity: 0.75;
+  font-style: italic;
+}
+
+.kata-rules {
+  font-size: 0.85rem;
+  margin: 0.8rem 0;
+  padding-left: 1.1rem;
+}
+
+.mela-detail-row {
+  margin: 0;
 }
