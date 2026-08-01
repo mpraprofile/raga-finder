@@ -39,10 +39,6 @@ export function applySthayi(label, sthayi) {
     .join("/");
 }
 
-// Degree -> role, for the three Gandhara and three Nishada variants.
-const GANDHARA_ROLE_AT_DEGREE = { 2: "shuddha", 3: "sadharana", 4: "antara" };
-const NISHADA_ROLE_AT_DEGREE = { 9: "shuddha", 10: "kaisiki", 11: "kakali" };
-
 // role -> number, one table per convention. "alt" is a 3-way cycle, not a
 // simple 2-way swap: Shuddha takes the slot Antara/Kakali vacates, and
 // Sadharana/Kaisiki (usually thought of as the fixed "2") also move.
@@ -253,9 +249,38 @@ export const DEGREES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 // outside the selectable one - see the Piano's extended keyboard.
 export function keyLabelHtml(degree, labelPrefs, sthayi = 0) {
   const label = applySthayi(labelForDegree(degree, labelPrefs), sthayi);
-  if (!label.includes("/")) return `<span class="key-label">${label}</span>`;
-  const [bottom, top] = label.split("/");
-  return `<span class="key-label stacked">${top}<br>${bottom}</span>`;
+  const stacked = stackedNames(label, degree);
+  if (!stacked) return `<span class="key-label">${label}</span>`;
+  return `<span class="key-label stacked">${stacked.top}<br>${stacked.bottom}</span>`;
+}
+
+// An aliased semitone's two names, split into the line each one goes on.
+//
+// The everyday name takes the *lower* line - the line every single name in the
+// app already sits on, and the one the eye lands on - with the rare vivadi
+// reading above it. Which of the pair is which is a fact about the pair and not
+// about the family: at semitone 2 the rare reading is the Gandhara one, at
+// semitone 3 it is the Rishabha, and the same alternation runs through D/N at 9
+// and 10. So this cannot be done by always taking the R (or D) name, or always
+// the second name, which is what it used to do - that rule happened to be right
+// at 2 and 9 and wrong at 3 and 10.
+//
+// Measured rather than remembered: scripts/count_label_usage.py counts every
+// note of every raga in data/ragas.json, and the split is close to 9:1 each
+// time - R2 89.9% against G1, G2 85.0% against R3, D2 89.0% against N1, N2
+// 89.0% against D3. The four minority readings are exactly the four vivadi
+// swaras, which is the same statement from the theory side.
+//
+// Returns null when the name is a single one with nothing to stack.
+const VIVADI_IS_THE_SECOND_NAME = new Set([2, 9]); // at 3 and 10 it is the first
+
+export function stackedNames(label, degree) {
+  const parts = label.split("/");
+  if (parts.length < 2) return null;
+  const [first, second] = parts;
+  return VIVADI_IS_THE_SECOND_NAME.has(((degree % 12) + 12) % 12)
+    ? { top: second, bottom: first }
+    : { top: first, bottom: second };
 }
 
 // Which semitones are the black keys of a C-C keyboard, for any semitone -
@@ -268,16 +293,36 @@ export function isBlackKey(semitone) {
   return !NATURAL_PITCH_CLASSES.has(((semitone % 12) + 12) % 12);
 }
 
+// The Western note a key physically is, named from middle C - the Piano draws
+// real keys now that the Key/Shruti setting decides which one Sa sits on, and a
+// key that won't say what note it is can't be matched against a real keyboard
+// or a shruti box.
+//
+// Sharps only, no flats: the app's Key setting names its black keys with
+// sharps, and offering both here would put two names on one key for no gain.
+const NOTE_NAMES = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"];
+
+export function noteNameAt(semitonesFromC4) {
+  return NOTE_NAMES[((semitonesFromC4 % 12) + 12) % 12];
+}
+
+// Scientific pitch notation, so the two Cs on the keyboard are distinguishable:
+// middle C is C4, and the octave number turns over at C, not at A.
+export function noteNameWithOctaveAt(semitonesFromC4) {
+  return noteNameAt(semitonesFromC4) + (4 + Math.floor(semitonesFromC4 / 12));
+}
+
 // A pre-transpose swara name, formatted for a reference annotation: no
-// brackets, and a compound name stacked onto two lines with the higher swara
-// of the pair on top - the same order keyLabelHtml uses for a real label, so
-// an annotation and the label under it never disagree about which name sits
-// where. Returned as text with a newline in it; the elements that show these
-// are white-space: pre-line. Shared so the Piano and the wheel's reference
-// ring cannot drift apart in format.
-export function stackReferenceLabel(label) {
-  const parts = label.split("/");
-  return parts.length > 1 ? parts[1] + "\n" + parts[0] : label;
+// brackets, and a compound name stacked onto two lines through stackedNames -
+// the same split keyLabelHtml uses for a real label, so an annotation and the
+// label under it never disagree about which name sits where. Takes the degree
+// for that reason: which of the pair goes on top is a fact about the semitone,
+// not something the string alone can answer. Returned as text with a newline in
+// it; the elements that show these are white-space: pre-line. Shared so the
+// Piano and the wheel's reference ring cannot drift apart in format.
+export function stackReferenceLabel(label, degree) {
+  const stacked = stackedNames(label, degree);
+  return stacked ? `${stacked.top}\n${stacked.bottom}` : label;
 }
 // The "swara selection box" - a tray of tiles showing the current
 // selection, each tile tappable to remove exactly that occurrence. Started

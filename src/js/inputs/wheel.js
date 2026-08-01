@@ -137,7 +137,12 @@ function shapePointFor(degree, labelOffset = 0) {
 // up. `onToggle` is accepted and ignored, the same way Piano and Buttons
 // ignore props they don't use.
 export function render(container, props) {
-  const { selected, list, labelPrefs, order, onReplace, summary, insertAt, labelOffset = 0 } = props;
+  // `labelOffset` rotates the wheel and `saOffset` sounds it, and they are not
+  // the same number. The wheel's twelve spokes are pitch classes *relative to
+  // Sa* - it has no fixed physical frame the way the Piano's keys do - so the
+  // Key setting has nothing to rotate here and only shows up in the pitch.
+  // Graha bhēdam does both.
+  const { selected, list, labelPrefs, order, onReplace, summary, insertAt, labelOffset = 0, saOffset = 0 } = props;
   const orderMode = Boolean(order);
 
   container.className = "wheel-wrap";
@@ -154,7 +159,7 @@ export function render(container, props) {
   const nodesByDegree = appendNodes(root, { selected, labelPrefs, order, labelOffset });
   appendReferenceRing(root, labelPrefs, labelOffset);
 
-  attachPointerHandlers(root, { selected, list, orderMode, onReplace, nodesByDegree, insertAt, labelOffset });
+  attachPointerHandlers(root, { selected, list, orderMode, onReplace, nodesByDegree, insertAt, labelOffset, saOffset });
 
   // Order mode only: the recorded positions live in the shared selection
   // box below, not on the wheel. Numbers on the nodes would stack and
@@ -431,12 +436,12 @@ function appendReferenceRing(root, labelPrefs, labelOffset) {
     label.style.left = `${x}%`;
     label.style.top = `${y}%`;
     // A compound name stacks, the way the node it echoes does - and in the same
-    // order, higher swara on top, since stackReferenceLabel is what the Piano's
-    // annotations use too. It was one wide line here originally, to keep a
-    // reference mark from competing with a real label, but that width is
-    // exactly what S' collided with (see the clearance note above).
-    // .wheel-ref-label is white-space: pre-line, so the newline breaks.
-    label.textContent = stackReferenceLabel(labelForDegree(pc, labelPrefs));
+    // order, the everyday name on the lower line, since stackReferenceLabel is
+    // what the Piano's annotations use too. It was one wide line here
+    // originally, to keep a reference mark from competing with a real label, but
+    // that width is exactly what S' collided with (see the clearance note
+    // above). .wheel-ref-label is white-space: pre-line, so the newline breaks.
+    label.textContent = stackReferenceLabel(labelForDegree(pc, labelPrefs), pc);
     ring.appendChild(label);
   }
   root.appendChild(ring);
@@ -480,7 +485,7 @@ function degreeAtPoint(root, event, labelOffset) {
   return (((spoke - labelOffset) % 12) + 12) % 12;
 }
 
-function attachPointerHandlers(root, { selected, list, orderMode, onReplace, nodesByDegree, insertAt, labelOffset }) {
+function attachPointerHandlers(root, { selected, list, orderMode, onReplace, nodesByDegree, insertAt, labelOffset, saOffset }) {
   if (typeof onReplace !== "function") return;
 
   // Where new swaras land. Ordinarily the end; in order mode the selection
@@ -538,7 +543,14 @@ function attachPointerHandlers(root, { selected, list, orderMode, onReplace, nod
     // Entering a note that isn't already selected is an add, and adds are
     // audible; touching one you already have stays silent, matching the
     // silent-deselect rule. In order mode every entry is an add.
-    if (orderMode || !sweep.have.has(degree)) playTone(degree);
+    //
+    // `degree + saOffset` because a rotated wheel still holds the pitches it
+    // started with - the spoke under the finger is the one the grey reference
+    // ring names, and that is what it has to sound like - and because saOffset
+    // also carries the Key setting, which is what makes the wheel sound in the
+    // same key as everything else. Same rule the Play buttons follow; see
+    // soundingDegree in app.js.
+    if (orderMode || !sweep.have.has(degree)) playTone(degree + saOffset);
     sweep.have.add(degree);
   }
 

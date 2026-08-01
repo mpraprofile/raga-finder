@@ -16,23 +16,105 @@ export function directionNoteSet(notes) {
   return set;
 }
 
-// A raga's note set: distinct degrees across both scales combined - the
-// combined-mode finder asks "does this raga use these notes at all," not
-// "in this specific direction." See directionNoteSet for per-direction.
-export function noteSet(raga) {
-  const combined = directionNoteSet(raga.arohana);
-  for (const d of directionNoteSet(raga.avarohana)) combined.add(d);
+// --- Variants ------------------------------------------------------------
+// Some ragas are listed with more than one scale, and the one stored as
+// primary was picked by a rule that is often only a placeholder (see
+// `primary_source` in data/ragas.json, and specs/05-data-accuracy.md). If
+// matching only ever looked at the primary, choosing one would just relocate
+// the bug it was meant to fix: play Hamsanadam's D3 form and nothing comes
+// back, even though the data holds it.
+//
+// So every matcher searches the alternatives too. A form is one readable
+// version of the raga: the primary pair, plus one form per variant with the
+// *other* direction left at its primary. Variants are per-direction and the
+// source's arohana and avarohana counts rarely agree, so they cannot be paired
+// up by index - taking the cross product would invent combinations nobody
+// listed. `variant` is null on the primary form.
+export function ragaForms(raga) {
+  const forms = [{ arohana: raga.arohana, avarohana: raga.avarohana, variant: null }];
+  for (const variant of raga.variants ?? []) {
+    forms.push({
+      arohana: variant.direction === "arohana" ? variant.notes : raga.arohana,
+      avarohana: variant.direction === "avarohana" ? variant.notes : raga.avarohana,
+      variant,
+    });
+  }
+  return forms;
+}
+
+// One form's note set: distinct degrees across both its scales combined - what
+// the combined-mode finder asks against, since its question is "does this raga
+// use these swaras at all," not "in this specific direction." See
+// directionNoteSet for the per-direction answer separate mode needs.
+function formNoteSet(form) {
+  const combined = directionNoteSet(form.arohana);
+  for (const d of directionNoteSet(form.avarohana)) combined.add(d);
   return combined;
 }
 
-// Result ordering, used by every list in the app. Melakartas come first,
-// then alphabetical within each group: a parent scale is the answer most
-// searches are really reaching for, and burying it among its own janyas
-// (which are far more numerous, and often alphabetically earlier) made it
-// the hardest row to find. Rows carry a "melakarta" badge too - the order
-// alone doesn't say why something is on top. See renderRow in app.js.
+// Try every form and keep the best result: a stronger tier always wins, and
+// the primary wins ties. `evaluate` returns { tier, annotation } - tier 2 for
+// exact, 1 for a partial - or null for no match. Forms are generated primary
+// first, so `>` rather than `>=` is what makes ties fall to the primary: a
+// raga that matches on its own stored scale is never reported as a variant hit.
+function bestForm(raga, evaluate) {
+  let best = null;
+  for (const form of ragaForms(raga)) {
+    const result = evaluate(form);
+    if (result && (!best || result.tier > best.tier)) best = { ...result, form };
+  }
+  return best;
+}
+
+// One row per raga, never one row per variant - splitting them would
+// manufacture exactly the duplicate-looking results spec 05 exists to remove.
+// When a variant is what matched, the row carries that variant's scale, so it
+// shows and plays the notes the user actually asked for rather than a
+// different scale under the same name, and `matchedVariant` lets the row say
+// so (see renderRow in app.js).
+function annotateMatch(raga, best) {
+  const annotated = { ...raga, ...(best.annotation ?? {}) };
+  if (best.form.variant) {
+    annotated.arohana = best.form.arohana;
+    annotated.avarohana = best.form.avarohana;
+    annotated.matchedVariant = best.form.variant;
+  }
+  return annotated;
+}
+
+// Result ordering, used by every list in the app. Four keys, each answering
+// a question the one below it can't. Rows carry badges saying what they are -
+// the order alone doesn't explain itself. See renderRow in app.js.
+//
+// 1. **Melakartas first.** A parent scale is the answer most searches are
+//    really reaching for, and burying it among its own janyas (far more
+//    numerous, often alphabetically earlier) made it the hardest row to find.
+// 2. **Carnatic before Hindustani.** This is a Carnatic learning app; when
+//    several ragas match identically, the reading from the tradition being
+//    taught should lead. Alphabetical put Bhoopali {Hindustani} above Mohanam.
+// 3. **Ragas with their own Wikipedia article before those without.** The
+//    long-standing gap here was a prominence signal, which we assumed had to
+//    be hand-authored - and CLAUDE.md is right that a curated list of names
+//    that matter is the wrong kind of data to invent. But the source does
+//    carry one: it links 112 of 893 janyas to an article of their own and
+//    leaves the rest unlinked. It is a proxy, not a ranking - a stub article
+//    counts the same as a long one - but it is measured rather than decided,
+//    and it separates exactly the pairs that were wrong. Mohanam is linked;
+//    Jaithshree, Mahanandhi, Shivapriya and Sankrandanapriya are not.
+// 4. **Alphabetical**, to keep the order stable and predictable.
+//
+// This finally settles PROGRESS.md's "which exact match to show first": for
+// `S R2 G3 P D2 S` it now gives Mohanam, Jaithshree, Bhoopali {Hindustani},
+// Deshkar {Hindustani}. What it does *not* do is claim Mohanam is a more
+// important raga than Jaithshree in general - only that the source treats it
+// as more written-about, which is the best evidence available.
 function byMelakartaThenName(a, b) {
-  return Number(Boolean(b.is_melakarta)) - Number(Boolean(a.is_melakarta)) || a.name.localeCompare(b.name);
+  return (
+    Number(Boolean(b.is_melakarta)) - Number(Boolean(a.is_melakarta)) ||
+    Number(a.tradition === "hindustani") - Number(b.tradition === "hindustani") ||
+    Number(Boolean(b.article_url)) - Number(Boolean(a.article_url)) ||
+    a.name.localeCompare(b.name)
+  );
 }
 
 function isSuperset(set, subset) {
@@ -59,12 +141,14 @@ export function match(ragas, pressed) {
   const exact = [];
   const contains = [];
   for (const raga of ragas) {
-    const notes = noteSet(raga);
-    if (setsEqual(notes, pressed)) {
-      exact.push(raga);
-    } else if (isSuperset(notes, pressed)) {
-      contains.push(raga);
-    }
+    const best = bestForm(raga, (form) => {
+      const notes = formNoteSet(form);
+      if (setsEqual(notes, pressed)) return { tier: 2 };
+      if (isSuperset(notes, pressed)) return { tier: 1 };
+      return null;
+    });
+    if (!best) continue;
+    (best.tier === 2 ? exact : contains).push(annotateMatch(raga, best));
   }
 
   exact.sort(byMelakartaThenName);
@@ -82,24 +166,26 @@ export function matchSeparate(ragas, pressedArohana, pressedAvarohana) {
     return { exact: [], contains: [] };
   }
 
+  const aroConstrained = pressedArohana.size > 0;
+  const avaConstrained = pressedAvarohana.size > 0;
+
   const exact = [];
   const contains = [];
   for (const raga of ragas) {
-    const aroSet = directionNoteSet(raga.arohana);
-    const avaSet = directionNoteSet(raga.avarohana);
+    const best = bestForm(raga, (form) => {
+      const aroSet = directionNoteSet(form.arohana);
+      const avaSet = directionNoteSet(form.avarohana);
 
-    const aroConstrained = pressedArohana.size > 0;
-    const avaConstrained = pressedAvarohana.size > 0;
+      const aroOk = !aroConstrained || isSuperset(aroSet, pressedArohana);
+      const avaOk = !avaConstrained || isSuperset(avaSet, pressedAvarohana);
+      if (!aroOk || !avaOk) return null;
 
-    const aroOk = !aroConstrained || isSuperset(aroSet, pressedArohana);
-    const avaOk = !avaConstrained || isSuperset(avaSet, pressedAvarohana);
-    if (!aroOk || !avaOk) continue;
-
-    const aroExact = !aroConstrained || setsEqual(aroSet, pressedArohana);
-    const avaExact = !avaConstrained || setsEqual(avaSet, pressedAvarohana);
-
-    if (aroExact && avaExact) exact.push(raga);
-    else contains.push(raga);
+      const aroExact = !aroConstrained || setsEqual(aroSet, pressedArohana);
+      const avaExact = !avaConstrained || setsEqual(avaSet, pressedAvarohana);
+      return { tier: aroExact && avaExact ? 2 : 1 };
+    });
+    if (!best) continue;
+    (best.tier === 2 ? exact : contains).push(annotateMatch(raga, best));
   }
 
   exact.sort(byMelakartaThenName);
@@ -144,16 +230,22 @@ export function matchOrdered(ragas, sequence, direction = "either") {
   const exact = [];
   const contains = [];
   for (const raga of ragas) {
-    const aroSeq = direction !== "avarohana" ? directionSequence(raga.arohana) : null;
-    const avaSeq = direction !== "arohana" ? directionSequence(raga.avarohana) : null;
-    const aroHit = aroSeq !== null && sequenceContainsRun(aroSeq, sequence);
-    const avaHit = avaSeq !== null && sequenceContainsRun(avaSeq, sequence);
-    if (!aroHit && !avaHit) continue;
+    const best = bestForm(raga, (form) => {
+      const aroSeq = direction !== "avarohana" ? directionSequence(form.arohana) : null;
+      const avaSeq = direction !== "arohana" ? directionSequence(form.avarohana) : null;
+      const aroHit = aroSeq !== null && sequenceContainsRun(aroSeq, sequence);
+      const avaHit = avaSeq !== null && sequenceContainsRun(avaSeq, sequence);
+      if (!aroHit && !avaHit) return null;
 
-    const aroExact = aroHit && aroSeq.length === sequence.length;
-    const avaExact = avaHit && avaSeq.length === sequence.length;
-    const annotated = { ...raga, matchedArohana: aroHit, matchedAvarohana: avaHit };
-    (aroExact || avaExact ? exact : contains).push(annotated);
+      const aroExact = aroHit && aroSeq.length === sequence.length;
+      const avaExact = avaHit && avaSeq.length === sequence.length;
+      return {
+        tier: aroExact || avaExact ? 2 : 1,
+        annotation: { matchedArohana: aroHit, matchedAvarohana: avaHit },
+      };
+    });
+    if (!best) continue;
+    (best.tier === 2 ? exact : contains).push(annotateMatch(raga, best));
   }
 
   exact.sort(byMelakartaThenName);
@@ -177,17 +269,23 @@ export function matchOrderedSeparate(ragas, aroSequence, avaSequence) {
   const exact = [];
   const contains = [];
   for (const raga of ragas) {
-    const aroSeq = directionSequence(raga.arohana);
-    const avaSeq = directionSequence(raga.avarohana);
+    const best = bestForm(raga, (form) => {
+      const aroSeq = directionSequence(form.arohana);
+      const avaSeq = directionSequence(form.avarohana);
 
-    const aroOk = !aroConstrained || sequenceContainsRun(aroSeq, aroSequence);
-    const avaOk = !avaConstrained || sequenceContainsRun(avaSeq, avaSequence);
-    if (!aroOk || !avaOk) continue;
+      const aroOk = !aroConstrained || sequenceContainsRun(aroSeq, aroSequence);
+      const avaOk = !avaConstrained || sequenceContainsRun(avaSeq, avaSequence);
+      if (!aroOk || !avaOk) return null;
 
-    const aroExact = !aroConstrained || aroSeq.length === aroSequence.length;
-    const avaExact = !avaConstrained || avaSeq.length === avaSequence.length;
-    const annotated = { ...raga, matchedArohana: aroConstrained, matchedAvarohana: avaConstrained };
-    (aroExact && avaExact ? exact : contains).push(annotated);
+      const aroExact = !aroConstrained || aroSeq.length === aroSequence.length;
+      const avaExact = !avaConstrained || avaSeq.length === avaSequence.length;
+      return {
+        tier: aroExact && avaExact ? 2 : 1,
+        annotation: { matchedArohana: aroConstrained, matchedAvarohana: avaConstrained },
+      };
+    });
+    if (!best) continue;
+    (best.tier === 2 ? exact : contains).push(annotateMatch(raga, best));
   }
 
   exact.sort(byMelakartaThenName);

@@ -48,12 +48,24 @@
            path rather than a stroked one - at this size a 2px stroke on a 6px
            wheel is solid ink either way, and a fill keeps the teeth distinct. -->
       <svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <!-- The mark is not centred on its own viewBox: the disc is drawn about
+             (9.8, 9.8) and the badge hangs off the lower right, so the ink runs
+             0.8..21.7 across and 0.8..21.75 down. Rasterised and measured, both
+             its bounding box (11.25, 11.28) and its weight-centroid (11.30,
+             11.44) land left of and above the box centre (12, 12) - the two
+             agree, so there is no optical judgement to make here, just an
+             offset to cancel. Undone here rather than by editing every
+             coordinate, so the drawing stays legible against the geometry it
+             was designed with. Without it the icon reads as pushed left inside
+             the button's border, which is what it was. -->
+        <g transform="translate(0.72 0.63)">
         <circle cx="9.8" cy="9.8" r="8"/>
         <line x1="9.8" y1="9.2" x2="9.8" y2="14.4"/>
         <circle cx="9.8" cy="5.6" r="0.75" fill="currentColor" stroke="none"/>
         <circle class="icon-cutout" cx="17.6" cy="17.6" r="5.9" stroke="none"/>
         <path d="M16.26 14.97 L16.63 13.41 L18.57 13.41 L18.94 14.97 L19.21 15.13 L20.74 14.67 L21.71 16.34 L20.55 17.45 L20.55 17.75 L21.71 18.86 L20.74 20.53 L19.21 20.07 L18.94 20.23 L18.57 21.79 L16.63 21.79 L16.26 20.23 L15.99 20.07 L14.46 20.53 L13.49 18.86 L14.65 17.75 L14.65 17.45 L13.49 16.34 L14.46 14.67 L15.99 15.13 Z" fill="currentColor" stroke="none"/>
         <circle class="icon-cutout" cx="17.6" cy="17.6" r="1.45" stroke="none"/>
+        </g>
       </svg>
     </button>
     <button type="button" id="search-open-btn" class="icon-btn" aria-label="Search ragas by name" title="Search ragas by name">
@@ -79,8 +91,47 @@
     </fieldset>
     <fieldset class="control-group" id="layout-group">
       <legend>Layout</legend>
+      <!-- Short labels: the pair used to read "Combined" / "Separate
+           arohana/avarohana", which on its own was as wide as the row allowed
+           and left no line for Key/Shruti to share. The two block headings
+           below already say Arohana and Avarohana in full. -->
       <label><input type="radio" name="layout-mode" value="combined" checked> Combined</label>
-      <label><input type="radio" name="layout-mode" value="separate"> Separate arohana/avarohana</label>
+      <label><input type="radio" name="layout-mode" value="separate"> Separate</label>
+    </fieldset>
+    <!-- Key / Shruti: which physical note Sa sits on. The value is semitones
+         from middle C, which is exactly what the app measures pitch in.
+         Ordered by pitch, not by letter: the keys above G are offered an octave
+         *down* (G♯3..B3) rather than above C4, because the Piano draws a fixed
+         25-key window (-5..+19 semitones about middle C) and a full arohana
+         needs twelve semitones of headroom above Sa. Sa at G4 puts the upper Sa
+         on the topmost key exactly; G♯4 would push it off the keyboard.
+         G3 is offered as well as G4 - the bottom key of that same window, where
+         a scale still fits exactly, with nothing below it. It is the one note
+         on the list twice, so those two are the only entries that carry an
+         octave; every other name appears once and doesn't need one. The range
+         is stated once, in the legend.
+         The second number is the kattai/shruti-box numbering: white keys 1..7
+         from C, black keys the half above the key below them. There is no 3.5
+         or 7.5 - E-F and B-C have no black key between them. -->
+    <fieldset class="control-group" id="key-group">
+      <legend>Key <span class="legend-hint">(G3 to G4)</span> / Shruti</legend>
+      <label class="select-label" for="key-select">
+        <select id="key-select" aria-label="Key - which note Sa sits on, from G3 to G4">
+          <option value="-5">G3 / 5</option>
+          <option value="-4">G♯ / 5.5</option>
+          <option value="-3">A / 6</option>
+          <option value="-2">A♯ / 6.5</option>
+          <option value="-1">B / 7</option>
+          <option value="0" selected>C / 1</option>
+          <option value="1">C♯ / 1.5</option>
+          <option value="2">D / 2</option>
+          <option value="3">D♯ / 2.5</option>
+          <option value="4">E / 3</option>
+          <option value="5">F / 4</option>
+          <option value="6">F♯ / 4.5</option>
+          <option value="7">G4 / 5</option>
+        </select>
+      </label>
     </fieldset>
     <div class="note-order-row">
       <button type="button" class="mute-btn" id="mute-btn" aria-pressed="false"></button>
@@ -173,7 +224,11 @@
     </div>
   </div>
 
-  <p id="prompt" class="prompt">Press some keys to find matching ragas.</p>
+  <!-- Word for word EMPTY_PROMPT in app.js, which replaces this the moment the
+       raga data lands. It exists so the empty state reads the same during the
+       load as it does after - and it says "swaras", not "keys", because only
+       one of the three input styles has keys. -->
+  <p id="prompt" class="prompt">Select some swaras to find matching ragas.</p>
   <ul id="results" class="results"></ul>
   </div>
 
@@ -207,8 +262,8 @@
         of use instead, since Shuddha is rare/vivadi - pushing it to "3" and cycling Sadharana/Kaisiki and
         Antara/Kakali down to "1" and "2". Pick your convention using the Shuddha Gandhara / Shuddha Nishada rows
         above - the other rows in each family update to match. This choice changes every place a swara is shown
-        across the app, including each raga's own result further down - it's just a relabeling of the same scale,
-        not a change to what the scale is.
+        across the app: the chart below, the input widgets, and every raga's own scale in the finder's results -
+        it's just a relabeling of the same scale, not a change to what the scale is.
         </p>
       </details>
 

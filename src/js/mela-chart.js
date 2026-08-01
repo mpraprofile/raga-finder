@@ -15,6 +15,17 @@
 // over data/ragas.json.
 
 import { CHAKRA_COUNT, CHAKRA_SIZE, chakraOf, dnComboOf, derivedRaga, madhyamaOf, melaOf, positionOf, rgComboOf } from "./melakarta.js";
+import { renumberLabel } from "./notation.js";
+
+// melakarta.js hands back the mainstream tokens (that is its documented
+// contract - the same ones the scraper writes), so both chart axes have to be
+// put through the user's numbering preference before they are drawn, exactly
+// as a stored raga's own labels are. Only the G and N tokens can move; R, D
+// and M pass through renumberLabel unchanged, so a pair is always mapped as a
+// pair rather than the caller deciding which half needs it.
+function pairLabel(combo, prefs) {
+  return `${renumberLabel(combo.labels[0], prefs)} ${renumberLabel(combo.labels[1], prefs)}`;
+}
 
 // One square viewBox, scaled to whatever width the page gives it. Every
 // number below is in viewBox units, so the whole chart scales as one piece
@@ -105,7 +116,7 @@ function chakraLabel(chakra, chakras) {
   return entry ? `${chakra} ${entry.name}` : `chakra ${chakra}`;
 }
 
-function chartSvg(melaNames, chakras, selected) {
+function chartSvg(melaNames, chakras, selected, labelPrefs) {
   let s = `<svg class="mela-svg" viewBox="${-PAD} ${-PAD} ${VB + PAD * 2} ${VB + PAD * 2}" role="group" aria-label="Melakarta chakra chart, 72 cells">`;
 
   // The two hemispheres, themed as hemispheres: an arc band behind the chakra
@@ -167,7 +178,7 @@ function chartSvg(melaNames, chakras, selected) {
     const dn = dnComboOf(melaOf(1, k + 1));
     const y = CY - (R_INNER + k * RING_W + RING_W / 2);
     s += `<rect x="${CX - 40}" y="${f(y - 15)}" width="80" height="30" rx="6"/>`;
-    s += `<text x="${CX}" y="${f(y)}">${dn.labels[0]} ${dn.labels[1]}</text>`;
+    s += `<text x="${CX}" y="${f(y)}">${pairLabel(dn, labelPrefs)}</text>`;
   }
   s += "</g>";
 
@@ -191,7 +202,7 @@ function chartSvg(melaNames, chakras, selected) {
     const [nx, ny] = pt(R_RIM + 28, am);
     const [px, py] = pt(R_RIM - 20, am);
     s += `<text x="${f(nx)}" y="${f(ny)}" transform="${tangential(nx, ny, am)}">${esc(chakraLabel(q + 1, chakras))}</text>`;
-    s += `<text class="mela-rim-pair" x="${f(px)}" y="${f(py)}" transform="${tangential(px, py, am)}">${rg.labels[0]} ${rg.labels[1]}</text>`;
+    s += `<text class="mela-rim-pair" x="${f(px)}" y="${f(py)}" transform="${tangential(px, py, am)}">${pairLabel(rg, labelPrefs)}</text>`;
   }
   s += "</g>";
 
@@ -284,7 +295,9 @@ export function renderKatapayadiReference(el, katapayadi) {
 // --- Mounting ------------------------------------------------------------
 
 export function mountMelaChart(root, options) {
-  const { melaRagas, renderRow, getChakras, getKatapayadi } = options;
+  // getLabelPrefs is read at draw time, not captured once: the preference is a
+  // live object in app.js that the reference table's radios mutate in place.
+  const { melaRagas, renderRow, getChakras, getKatapayadi, getLabelPrefs = () => ({}) } = options;
   const chartEl = root.querySelector(".mela-chart");
   const legendEl = root.querySelector(".mela-legend-wrap");
   const detailEl = root.querySelector(".mela-detail");
@@ -336,7 +349,7 @@ export function mountMelaChart(root, options) {
   }
 
   function draw() {
-    chartEl.innerHTML = chartSvg(melaNames, getChakras(), selected);
+    chartEl.innerHTML = chartSvg(melaNames, getChakras(), selected, getLabelPrefs());
     for (const cell of chartEl.querySelectorAll(".mela-cell")) {
       cell.addEventListener("click", () => select(Number(cell.dataset.mela)));
       cell.addEventListener("keydown", onCellKey);
@@ -388,9 +401,9 @@ export function mountMelaChart(root, options) {
   renderDetail();
 
   // Called when the scraped JSON arrives, and whenever the swara numbering
-  // preference changes - the detail panel's scale line is rendered through
-  // noteLabel(), so it has to be rebuilt to follow that choice like every
-  // other scale in the app does.
+  // preference changes - both the chart's own two axes and the detail panel's
+  // scale line are rendered under that choice, so both have to be rebuilt to
+  // follow it like every other scale in the app does.
   return {
     refresh() {
       draw();

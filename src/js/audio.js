@@ -1,8 +1,15 @@
 // Web Audio tone playback for the swara keyboard.
-// See specs/02-swara-keyboard-finder.md "Audio" for the frequency formula
-// and why SA_HZ isn't user-adjustable here (that's the shruti box's job).
+// See specs/02-swara-keyboard-finder.md "Audio" for the frequency formula.
 
-const SA_HZ = 220; // ~A3, a comfortable low Sa reference
+// Middle C, at concert pitch (A4 = 440). Everything the app sounds is measured
+// from here in semitones, and the Key/Shruti setting is nothing more than which
+// semitone Sa is put on - see soundingDegree in app.js.
+//
+// This replaced a hard-wired `SA_HZ = 220`, which is an A, not a C, even though
+// the Piano's key layout and labels have always called the home note C. That
+// was invisible while nothing named the key out loud; a setting whose default
+// reads "C4 / 1" cannot sound an A.
+const C4_HZ = 261.63;
 
 let ctx = null;
 function getContext() {
@@ -46,16 +53,21 @@ function primeForIOS(audioCtx) {
   }
 }
 
+// Write-only from this module's point of view: app.js owns the user-facing
+// mute state and pushes it down here, so there is no isMuted() to read it back.
 let muted = false;
 export function setMuted(value) {
   muted = value;
 }
-export function isMuted() {
-  return muted;
-}
 
-export function frequencyForDegree(degree) {
-  return SA_HZ * Math.pow(2, degree / 12);
+// The one place a number becomes a pitch. Its argument is semitones from
+// middle C, *not* a swara degree: by the time a tone is asked for, the Key
+// setting and any graha bhedam shift have both been folded in, so what arrives
+// here is a physical key on a physical keyboard. Callers get there through
+// soundingDegree (app.js), which is the only thing that knows about either
+// offset.
+export function frequencyAt(semitonesFromC4) {
+  return C4_HZ * Math.pow(2, semitonesFromC4 / 12);
 }
 
 // Piano-ish struck-string tone: fast attack, quick decay to a lower level,
@@ -70,12 +82,12 @@ const PARTIALS = [
   { mult: 4, gain: 0.06 },
 ];
 
-export function playPianoTone(degree) {
+export function playPianoTone(semitonesFromC4) {
   if (muted) return;
 
   const audioCtx = getContext();
   if (audioCtx.state === "running") {
-    scheduleTone(audioCtx, degree);
+    scheduleTone(audioCtx, semitonesFromC4);
     return;
   }
 
@@ -86,12 +98,12 @@ export function playPianoTone(degree) {
   // which is what keeps the gesture valid.
   // Promise.resolve wrapper: old WebKit's resume() returns undefined.
   Promise.resolve(audioCtx.resume())
-    .then(() => scheduleTone(audioCtx, degree))
+    .then(() => scheduleTone(audioCtx, semitonesFromC4))
     .catch(() => {});
 }
 
-function scheduleTone(audioCtx, degree) {
-  const freq = frequencyForDegree(degree);
+function scheduleTone(audioCtx, semitonesFromC4) {
+  const freq = frequencyAt(semitonesFromC4);
   const now = audioCtx.currentTime;
   const duration = 1.4;
 

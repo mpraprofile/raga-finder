@@ -67,12 +67,25 @@ const EMPTY_PROMPT = "Select some swaras to find matching ragas.";
 // in as a run rather than in reverse. Cleared whenever the sequence it
 // pointed into stops existing.
 let insertAt = null;
+// Key / Shruti: which physical note Sa sits on, in semitones from middle C.
+// The dropdown offers -5..+7 (G3 up to G4) - see the fieldset in index.html
+// for why that particular stretch and not C..B.
+let keySemitone = 0;
 let muted = false;
 let ragas = [];
 let melaNames = new Map(); // mela number -> that melakarta's name, filled after load
 // Folded name forms for the search view, built once after load - see
 // buildNameIndex() in ragas.js.
 let nameIndex = [];
+// Which numbering convention each family is displayed in - see notation.js.
+// Changed from the reference table in the settings view, and persisted from
+// there like Key and Theme (see initLabelPrefs); these values are the fallback
+// for a first run or an unreadable stored one, not a fixed setting.
+//
+// "alt" for both is a deliberate default, not an oversight against CLAUDE.md's
+// mainstream table: that table describes what the scraper writes to
+// data/ragas.json, and this is the display layer. Alt is the convention the
+// family this app is built for expects to read.
 const labelPrefs = { gandhara: "alt", nishada: "alt" };
 
 // Insertion-ordered arrays, not Sets - order is always tracked (cheap), and
@@ -135,7 +148,7 @@ function toggleInList(list, degree) {
     list.splice(idx, 1); // deselecting is silent, per spec
   } else {
     list.push(degree);
-    playPianoTone(degree);
+    playPianoTone(soundingDegree(list, degree));
   }
 }
 
@@ -159,12 +172,12 @@ function addOrToggle(list, degree) {
   // speaks, including one that's already selected - there's no "deselect"
   // to keep silent here, so the silent-deselect rule doesn't apply.
   if (freePlay && inputStyle === "piano") {
-    playPianoTone(degree);
+    playPianoTone(soundingDegree(list, degree));
     return false;
   }
   if (orderMode) {
     insertDegree(list, degree);
-    playPianoTone(degree);
+    playPianoTone(soundingDegree(list, degree));
   } else {
     toggleInList(list, degree);
   }
@@ -211,7 +224,7 @@ function moveInList(list, from, to) {
 // the recorded click order, and whether tiles carry position badges.
 function appendNote(list, degree) {
   list.push(degree);
-  playPianoTone(degree);
+  playPianoTone(soundingDegree(list, degree));
 }
 function removeOneOccurrence(list, degree) {
   const idx = list.lastIndexOf(degree);
@@ -264,6 +277,88 @@ function advanceInsertPoint(added) {
 
 function listFor(which) {
   return which === "arohana" ? arohanaSel : which === "avarohana" ? avarohanaSel : combined;
+}
+
+// The inverse of listFor. The per-note tone helpers are handed the selection
+// array they're editing rather than the block's name, and they need that
+// block's transpose state to sound a note - see soundingDegree.
+function transposeStateForList(list) {
+  if (list === arohanaSel) return transposeState.arohana;
+  if (list === avarohanaSel) return transposeState.avarohana;
+  return transposeState.combined;
+}
+
+// Where Sa physically is, in semitones from middle C: the Key setting, plus
+// however far graha bhedam has since moved the tonic. This is the number the
+// Piano places its scale at and the number every tone is measured from, so the
+// two cannot disagree.
+//
+// Normalised into the same window the Key setting itself offers, because that
+// window is what the keyboard can draw. Without it, Key G4 plus a shift of a
+// few semitones would put Sa at +13 and run the scale clean off the end of the
+// board. Both ends of the choice are pitch classes, so this only ever moves an
+// octave, never a note.
+//
+// The Piano draws 25 keys, -5..+19 about middle C, and a scale needs twelve of
+// them above Sa: so Sa can sit anywhere from -5 (G3, with nothing below it) to
+// +7 (G4, whose upper Sa is the topmost key). Thirteen positions, which is one
+// more than there are pitch classes - so G, and only G, has two homes in the
+// window, and a G can be meant as either.
+const MIN_SA_OFFSET = -5;
+const MAX_SA_OFFSET = 7;
+
+// Where the wrap lands a G is therefore a real choice, and it's settled by
+// staying near the key the user actually chose: pick G3 for a low key and G4
+// for a high one, rather than always the same end, so a tonic shift moves the
+// scale as little as it can. At Key G3 or G4 with no shift this returns the key
+// itself, which is the case that would be most obviously wrong.
+function normaliseSaOffset(semitones) {
+  const wrapped = ((((semitones - MIN_SA_OFFSET) % 12) + 12) % 12) + MIN_SA_OFFSET; // [-5, +6]
+  const alt = wrapped + 12; // the same pitch class an octave up - only ever +7, from -5
+  if (alt > MAX_SA_OFFSET) return wrapped;
+  return Math.abs(alt - keySemitone) < Math.abs(wrapped - keySemitone) ? alt : wrapped;
+}
+
+function saOffsetFor(which) {
+  return normaliseSaOffset(keySemitone + transposeState[which].offset);
+}
+
+function saOffsetForList(list) {
+  return normaliseSaOffset(keySemitone + transposeStateForList(list).offset);
+}
+
+// What a selected degree actually *sounds* as, in semitones from middle C -
+// which is the only thing audio.js accepts.
+//
+// Two things sit between a degree and a pitch. The Key setting says which note
+// Sa is, and applies everywhere in the app, always. Graha bhedam rebases the
+// selection so the new tonic becomes degree 0 - but the notes themselves never
+// moved: the wheel rotates rather than re-drawing, the Piano's scale slides
+// along fixed keys, and the grey reference marks still name the pitch each
+// position started on. Adding that offset back on is what makes the ear agree
+// with all of it - you hear the same pitches you were already hearing, begun
+// from a different one of them, which is what graha bhedam *is*. Without it the
+// picture said "same notes, new Sa" while the sound said "new notes, same Sa".
+//
+// At Key C4 with no shift this is the identity, so nothing changes until one of
+// the two is actually used - and the shift half goes back to nothing after "Set
+// as 0", which is the control that says "this position is home now" and thereby
+// hands playback back to Sa. That button is the user-facing switch between the
+// two readings of a shifted scale; there is deliberately no separate preference
+// for it.
+//
+// The graha half is not applied to the results list's own preview players (see
+// playScaleOnce): a raga found by name is played from its own Sa, so found
+// ragas can be compared with each other rather than with the scale that led to
+// them. The Key half applies there too, as it does everywhere.
+function soundingDegree(list, degree) {
+  return degree + saOffsetForList(list);
+}
+
+// The same, for a whole sequence - what every block's Play button feeds to
+// makePlayer.
+function soundingSequence(list, degrees) {
+  return degrees.map((degree) => soundingDegree(list, degree));
 }
 
 // Which selections a press in `which`'s row moves. In separate mode with
@@ -390,6 +485,8 @@ function renderInputs() {
       // rather than as information.
       summary: exactMatchSummary(currentMatches().exact),
       labelOffset: transposeState.combined.offset,
+      saOffset: saOffsetFor("combined"),
+      keyOffset: keySemitone,
       ...trayEditingProps(combined, () => restartIfPlaying(combinedPlayer)),
       freePlay: inFreePlayMode(),
       onReplace: (newList) => {
@@ -431,6 +528,8 @@ function renderInputs() {
       labelPrefs,
       order: orderMapFor(arohanaSel),
       labelOffset: transposeState.arohana.offset,
+      saOffset: saOffsetFor("arohana"),
+      keyOffset: keySemitone,
       summary: exactMatchSummary(directionMatches(arohanaSel, "arohana")),
       ...trayEditingProps(arohanaSel, restartSeparatePlayers),
       onReplace: (newList) => {
@@ -472,6 +571,8 @@ function renderInputs() {
       order: orderMapFor(avarohanaSel),
       descending: true,
       labelOffset: transposeState.avarohana.offset,
+      saOffset: saOffsetFor("avarohana"),
+      keyOffset: keySemitone,
       summary: exactMatchSummary(directionMatches(avarohanaSel, "avarohana")),
       ...trayEditingProps(avarohanaSel, restartSeparatePlayers),
       onReplace: (newList) => {
@@ -693,11 +794,7 @@ function renderRow(raga, badge, matched, tint = Boolean(badge && badge.tier === 
     // (see buildCombinedSequence), so the timing feels identical to the
     // main Play controls above. One-shot: getLoop always false, so it
     // stops itself after the single arohana+avarohana pass.
-    buildSequence: () => {
-      const arohanaDegrees = raga.arohana.map((n) => n.degree);
-      const avarohanaDegrees = raga.avarohana.map((n) => n.degree);
-      return { sequence: [...arohanaDegrees, ...avarohanaDegrees], pauseAfterIndex: arohanaDegrees.length - 1 };
-    },
+    buildSequence: () => ragaSequenceInKey(raga),
     buttonEls: playBtn,
     getLoop: () => false,
     onStart: () => {
@@ -725,6 +822,19 @@ function renderRow(raga, badge, matched, tint = Boolean(badge && badge.tier === 
     const el = document.createElement("span");
     el.className = `badge badge-${badge.tier}`;
     el.textContent = badge.text;
+    name.appendChild(el);
+  }
+  // A raga can be listed with more than one scale, and the matchers search all
+  // of them (see ragaForms in ragas.js). When an alternative is what matched,
+  // the row shows and plays *that* scale - so it has to say so. This is the
+  // one case where staying quiet would actively mislead: the row would look
+  // like the raga's usual scale while showing something else.
+  if (raga.matchedVariant) {
+    const el = document.createElement("span");
+    el.className = "badge badge-variant";
+    el.textContent = "variant scale";
+    el.title = "This raga is listed with more than one scale; the swaras you "
+      + "played match this alternative rather than the one usually given.";
     name.appendChild(el);
   }
 
@@ -1105,6 +1215,13 @@ function showView(name) {
   stopAllPlayback();
   closeSuggestions(); // positioned against the search input, which may be on its way out
   for (const [key, el] of Object.entries(VIEWS)) el().hidden = key !== name;
+  // Belt and braces with the `aspect-ratio` in style.css, against the same
+  // iOS failure: the chart is built during init(), while this view is still
+  // hidden, so its one and only layout happened inside a display:none subtree.
+  // Redrawing here means the SVG is always built with the view on screen and
+  // a real containing block to measure against. Cheap - about a hundred
+  // nodes - and it keeps the current selection.
+  if (name === "settings") melaChart?.refresh();
   if (name === "search") ragaSearchInput.focus();
   else window.scrollTo({ top: 0 });
 }
@@ -1163,7 +1280,7 @@ function buildCombinedSequence() {
   // (the same value/note, from opposite ends of the same list, in both
   // modes) - so this is a deliberate repeat now that there's a pause
   // separating the two passes, not a bug.
-  const sequence = [...asc, ...desc];
+  const sequence = soundingSequence(combined, [...asc, ...desc]);
   return { sequence, pauseAfterIndex: asc.length - 1 };
 }
 
@@ -1275,7 +1392,7 @@ const combinedPlayer = makePlayer({
 let arohanaSoloPlayer, avarohanaSoloPlayer, jointPlayer;
 
 arohanaSoloPlayer = makePlayer({
-  buildSequence: () => ({ sequence: orderedOrSorted(arohanaSel, true), pauseAfterIndex: -1 }),
+  buildSequence: () => ({ sequence: soundingSequence(arohanaSel, orderedOrSorted(arohanaSel, true)), pauseAfterIndex: -1 }),
   buttonEls: arohanaPlayBtn,
   getLoop: () => arohanaLoopToggle.checked,
   isActive: () => !playBothToggle.checked,
@@ -1286,7 +1403,7 @@ arohanaSoloPlayer = makePlayer({
   },
 });
 avarohanaSoloPlayer = makePlayer({
-  buildSequence: () => ({ sequence: orderedOrSorted(avarohanaSel, false), pauseAfterIndex: -1 }),
+  buildSequence: () => ({ sequence: soundingSequence(avarohanaSel, orderedOrSorted(avarohanaSel, false)), pauseAfterIndex: -1 }),
   buttonEls: avarohanaPlayBtn,
   getLoop: () => avarohanaLoopToggle.checked,
   isActive: () => !playBothToggle.checked,
@@ -1308,8 +1425,11 @@ avarohanaSoloPlayer = makePlayer({
 // user can actually see and use.
 jointPlayer = makePlayer({
   buildSequence: () => {
-    const arohanaDegrees = orderedOrSorted(arohanaSel, true);
-    const avarohanaDegrees = orderedOrSorted(avarohanaSel, false);
+    // Each direction by its own offset: with "Transpose both" off the two can
+    // have been rotated by different amounts, and each has to sound where its
+    // own wheel says it sits.
+    const arohanaDegrees = soundingSequence(arohanaSel, orderedOrSorted(arohanaSel, true));
+    const avarohanaDegrees = soundingSequence(avarohanaSel, orderedOrSorted(avarohanaSel, false));
     if (arohanaDegrees.length === 0 && avarohanaDegrees.length === 0) return { sequence: [], pauseAfterIndex: -1 };
     return { sequence: [...arohanaDegrees, ...avarohanaDegrees], pauseAfterIndex: arohanaDegrees.length - 1 };
   },
@@ -1387,14 +1507,28 @@ function stopScalePreview() {
   scalePreviewToken++;
 }
 
+// A found raga's own scale, as pitches: arohana then avarohana, with the
+// turnaround index the pause is taken from (see buildCombinedSequence).
+//
+// The degrees are relative to the raga's own Sa, so the Key setting is all
+// that's added - never a graha bhedam offset. A raga you found by name is
+// heard from its own Sa, which is what lets two results be compared with each
+// other; the selection above is the thing that gets heard from wherever the
+// tonic has been moved to. Shared by the per-row Play buttons and the wheel's
+// centre summary, which are two players of the same thing and had drifted
+// apart once already.
+function ragaSequenceInKey(raga) {
+  const arohanaDegrees = raga.arohana.map((n) => n.degree + keySemitone);
+  const avarohanaDegrees = raga.avarohana.map((n) => n.degree + keySemitone);
+  return { sequence: [...arohanaDegrees, ...avarohanaDegrees], pauseAfterIndex: arohanaDegrees.length - 1 };
+}
+
 function playScaleOnce(raga) {
   stopActiveRowPreview();
   combinedPlayer.stop();
   stopAllSeparatePlayers();
 
-  const arohanaDegrees = raga.arohana.map((n) => n.degree);
-  const sequence = [...arohanaDegrees, ...raga.avarohana.map((n) => n.degree)];
-  const pauseAfterIndex = arohanaDegrees.length - 1;
+  const { sequence, pauseAfterIndex } = ragaSequenceInKey(raga);
   const myToken = ++scalePreviewToken;
   let i = 0;
 
@@ -1620,12 +1754,18 @@ function choiceControl(key, options) {
     radio.checked = labelPrefs[key] === opt.value;
     radio.addEventListener("change", () => {
       labelPrefs[key] = opt.value;
+      localStorage.setItem(labelPrefStorageKey(key), opt.value);
       buildReferenceTable();
       renderInputs();
       renderResults();
-      // The chakra chart's detail panel shows a scale like any other, so it
-      // follows the numbering choice like any other - it just happens to be
-      // the one list on the same page as the control that changed it.
+      // The name search is a whole other view, and its list is only rebuilt on
+      // a keystroke - so without this, going Search -> Settings -> change ->
+      // Search showed the results you left behind, still in the old numbering,
+      // until you touched the query. Cheap and a no-op on an empty query.
+      performRagaSearch();
+      // The chakra chart's two axes and its detail panel both show notes, so
+      // both follow the numbering choice like everything else - it just happens
+      // to be the one page the control that changed it is also on.
       melaChart?.refresh();
     });
     label.appendChild(radio);
@@ -1671,6 +1811,7 @@ function buildMelaChart() {
     melaRagas,
     getChakras: () => chakras,
     getKatapayadi: () => katapayadi,
+    getLabelPrefs: () => labelPrefs,
     // The chart's detail panel is a results list of exactly one row, so it
     // gets the row rendering, the per-row play button and the activeRowPlayer
     // mutual exclusion for nothing. `loadable` is right here in a way it
@@ -1727,6 +1868,62 @@ function applyTheme(theme) {
   else document.documentElement.dataset.theme = theme;
 }
 
+// Key / Shruti, persisted the same way and for the same reason: a family
+// member sings at one pitch, and having to re-set it every time the app opens
+// would make the setting worse than useless.
+const KEY_STORAGE_KEY = "keySemitone";
+
+function applyKey(semitone) {
+  keySemitone = semitone;
+  // Everything that makes a sound reads keySemitone at the moment it plays, so
+  // a running sequence would change key underneath itself mid-phrase. Stopping
+  // is the honest response - the phrase you asked for is not the one that would
+  // come out.
+  stopAllPlayback();
+  renderInputs(); // the Piano's scale moves to the new key
+}
+
+function initKey() {
+  const select = document.getElementById("key-select");
+  const saved = Number(localStorage.getItem(KEY_STORAGE_KEY));
+  // Number("") is 0, and 0 is a real value here (C4), so the stored string has
+  // to be checked before it's trusted - and range-checked, since a keyboard
+  // that can't draw the scale is worse than a forgotten preference.
+  const stored = localStorage.getItem(KEY_STORAGE_KEY);
+  if (stored !== null && Number.isInteger(saved) && saved >= MIN_SA_OFFSET && saved <= MAX_SA_OFFSET) {
+    keySemitone = saved;
+    select.value = String(saved);
+  }
+
+  select.addEventListener("change", (e) => {
+    applyKey(Number(e.target.value));
+    localStorage.setItem(KEY_STORAGE_KEY, String(keySemitone));
+  });
+}
+
+// One key per family rather than one JSON blob for the pair: they are two
+// independent choices, they are stored as the same plain strings labelPrefs
+// already holds, and it keeps the shape of the other two settings above.
+const LABEL_PREF_CONVENTIONS = ["mainstream", "alt"];
+
+function labelPrefStorageKey(family) {
+  return `labelPref.${family}`;
+}
+
+// Runs before buildReferenceTable(), which reads labelPrefs to decide which
+// radio in each pair comes up checked - so restoring the value is all that is
+// needed, and nothing has to reach into the DOM here.
+function initLabelPrefs() {
+  for (const family of Object.keys(labelPrefs)) {
+    const saved = localStorage.getItem(labelPrefStorageKey(family));
+    // Range-checked for the same reason Key is: a junk value would otherwise
+    // reach gandharaPref()/nishadaPref(), which treat anything that isn't
+    // "alt" as mainstream, and the app would silently show a convention the
+    // user never picked instead of falling back to the default.
+    if (LABEL_PREF_CONVENTIONS.includes(saved)) labelPrefs[family] = saved;
+  }
+}
+
 function initTheme() {
   const saved = localStorage.getItem(THEME_STORAGE_KEY) || "system";
   const radio = document.querySelector(`input[name="theme-pref"][value="${saved}"]`);
@@ -1744,6 +1941,8 @@ function initTheme() {
 
 async function init() {
   initTheme();
+  initKey(); // before the first renderInputs() below - it decides where the Piano's scale sits
+  initLabelPrefs(); // before buildReferenceTable() and renderInputs() - both read labelPrefs
   buildReferenceTable();
   renderMuteButton();
   updateLayoutVisibility(); // also runs updateControlAvailability() - Play both defaults checked

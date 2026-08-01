@@ -517,6 +517,16 @@ h1 {
   padding: 0 0.3rem;
 }
 
+/* A detail carried by the legend rather than repeated down a list - the Key
+   dropdown's range, which every one of its thirteen entries would otherwise
+   have to spell out with an octave number. Smaller again than the legend it
+   sits in, so it reads as a hint attached to the label rather than as part of
+   the name. */
+.control-group legend .legend-hint {
+  font-size: 0.85em;
+  opacity: 0.8;
+}
+
 .control-group label {
   font-size: 0.85rem;
   white-space: nowrap;
@@ -580,6 +590,51 @@ h1 {
 .control-group input[type="radio"] {
   position: absolute;
   opacity: 0;
+}
+
+/* Key / Shruti. Every other choice in this panel is a segmented set of pills,
+   which works while a set is two or three wide; this one is twelve, and twelve
+   pills wrap onto a second line and push Layout off the row - the opposite of
+   what shortening Layout was for. A real <select> keeps its native popup (and
+   with it the platform's own wheel picker on a phone) and costs the row almost
+   no width, at the price of hiding its neighbours until opened. Styled to the
+   same pill outline so it still reads as one of the family. */
+.select-label {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.control-group select {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.3rem 1.6rem 0.3rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+  background: canvas;
+  color: canvastext;
+  cursor: pointer;
+  appearance: none;
+}
+
+.control-group select:hover {
+  border-color: color-mix(in srgb, var(--card-border) 40%, var(--accent) 60%);
+}
+
+.control-group select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The arrow the native appearance took with it. On the label, not the select,
+   so it can sit over the select's own padding without being clipped by it. */
+.select-label::after {
+  content: "▾";
+  position: absolute;
+  right: 0.6rem;
+  font-size: 0.8rem;
+  opacity: 0.6;
+  pointer-events: none;
 }
 
 /* Smartphone-style toggle switch, replacing the native checkbox look, for
@@ -867,6 +922,41 @@ h1 {
      content box to centre a label in. Zeroing the sides makes every key the
      width it declares at every screen size. */
   padding: 0 0 0.6rem;
+}
+
+/* The note Sa's own key physically is - the one Western label on the keyboard.
+   With the scale free to sit anywhere on it, "which key am I in" is answered by
+   finding this; the other keys are counted off from it, the way they would be
+   on a real keyboard. See piano.js for why it isn't on every key. Every key
+   still carries its full name with octave in `title` and in its accessible
+   name.
+
+   It is a different *kind* of fact from everything else on this keyboard, and
+   is set apart so that it can't be read as one more swara: the swaras are
+   Gentium and sit at the foot of their keys, this is the UI face, smaller and
+   letter-spaced, at the head of its key. It sat under the swara label at first,
+   which put two unrelated labels in one column where they read as a stack - the
+   very thing the app uses to mean "these are two names for one note". It then
+   spent a version in a filled tag, which separated it but at the cost of a
+   solid block of ink on a keyboard that has none anywhere else. */
+.piano .key-note {
+  position: absolute;
+  top: 5px;
+  /* `left` is set per key by piano.js: the middle of the strip along the key's
+     head that no black key covers, which is not the middle of the key. A white
+     key's name is always a single letter, so that strip is always wide enough
+     to hold it - it is the two-character sharps that need room, and those are
+     on black keys, which nothing covers. */
+  transform: translateX(-50%);
+  /* Takes the key's own colour, so it reads on a white key and a black one
+     without either being told about the other - the same way the swara label
+     below it does. */
+  font-size: clamp(0.34rem, 1.9cqw, 0.55rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.06em;
+  opacity: 0.85;
+  pointer-events: none;
 }
 
 .button-rows {
@@ -2009,6 +2099,19 @@ h1 {
   color: var(--mela-fg);
 }
 
+/* A caveat about the scale shown, not a verdict on the match, so it takes
+   neither the green nor the amber. Outlined like .badge-partial but with a
+   dashed edge - the row is showing a reading of the raga that the data itself
+   does not treat as settled, and the border says "provisional" without
+   shouting over the match badge next to it. */
+.badge-variant {
+  color: canvastext;
+  background: none;
+  border: 1px dashed var(--card-border);
+  opacity: 0.8;
+  font-weight: 500;
+}
+
 .mela-context {
   opacity: 0.7;
   font-size: 0.85rem;
@@ -2122,6 +2225,16 @@ h1 {
   display: block;
   width: 100%;
   height: auto;
+  /* Stated rather than inferred, and load-bearing on iOS. The chart is built
+     while the reference view is still `hidden`, so it is laid out inside a
+     display:none subtree; with only `height: auto` the box height comes from
+     resolving the viewBox's intrinsic ratio against a containing block that is
+     currently zero wide, and WebKit does not reliably re-resolve it when the
+     view is revealed. The result was a reference page that opened blank and
+     "healed" on a second visit, because that visit laid it out afresh. The
+     viewBox is square, so this is the same number - it just no longer depends
+     on anything being measurable at build time. */
+  aspect-ratio: 1;
   /* Landscape guard: without it a short, wide window gives a chart taller than
      the screen with the detail panel pushed off the bottom. */
   max-height: 82vh;

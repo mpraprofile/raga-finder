@@ -16,7 +16,7 @@ Gentium Book Plus, (c) SIL International. Reserved Font Name "Gentium".
 
 Used for **swara labels only** - see `--font-swara` in `css/style.css`. Chosen
 because it draws by far the most visible sthayi marks: measured (see
-`font-research.html` at the repo root) it puts 0.176 of the letter's own ink
+`demos/font-research.html`) it puts 0.176 of the letter's own ink
 into the dot above and 0.099 into the dot below, against 0.064 / 0.046 for the
 `system-ui` face it replaced. The marks have to stay real combining characters -
 U+0307 and U+0323 - so that labels remain copyable and searchable, which left

@@ -1,7 +1,7 @@
 {
   "name": "SwaRāgā",
   "short_name": "SwaRāgā",
-  "description": "Interactive Carnatic raga finder, swara keyboard, and note-order search - private family app.",
+  "description": "Interactive Carnatic raga finder, swara keyboard, and swara-order search - private family app.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
