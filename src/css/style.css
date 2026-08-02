@@ -1811,14 +1811,14 @@ h1 {
   gap: 0.35rem;
 }
 
-/* The control's name on two lines: the term, then a plain-English gloss under
-   it. Two lines rather than one because at the narrowest the app goes (a 288px
-   row) the label has 111.7px to work in, and the term alone needs 83.5px - a
-   single line carrying both names needs 149.7px and does not fit even with
-   "Set as 0" taken out of the row.
-   The gloss is deliberately not "Transpose": transposing moves every pitch,
-   while graha bhedam holds the pitches still and moves Sa to a different one of
-   them. They are different operations and this is the second one. */
+/* The control's name on two lines: the plain-English name, with the traditional
+   term under it. Two lines rather than one because at the narrowest the app
+   goes (a 288px row) the label has 111.7px to work in, and the term alone needs
+   83.5px - a single line carrying both names needs 149.7px and does not fit
+   even with "Set as 0" taken out of the row.
+   Neither line is "Transpose": transposing moves every pitch, while gṛha
+   bhēdam holds the pitches still and moves Sa to a different one of them. They
+   are different operations and this is the second one. */
 .transpose-title {
   font-size: 0.8rem;
   opacity: 0.75;
@@ -1829,7 +1829,7 @@ h1 {
   line-height: 1.15;
   text-align: center;
   /* Neither line may break mid-term. Without this, a squeezed row wrapped it to
-     "Graha / bhedam", which reads as two words rather than one name. */
+     "Gṛha / bhēdam", which reads as two words rather than one name. */
   white-space: nowrap;
 }
 

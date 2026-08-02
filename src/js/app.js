@@ -252,7 +252,7 @@ function orderMapFor(list) {
   return map;
 }
 
-// Replaces the entire selection in one go - graha bhēdam rotation and
+// Replaces the entire selection in one go - gṛha bhēdam rotation and
 // sweep-select (see specs/03-swara-wheel.md) both change every note at
 // once, which none of the existing per-note callbacks can express. Follows
 // the same pattern as the rest: mutate the list in place (it's the live
@@ -270,7 +270,7 @@ function advanceInsertPoint(added) {
   if (orderMode && insertAt !== null && added > 0) insertAt += added;
 }
 
-// --- Transpose (graha bhēdam) -------------------------------------------
+// --- Transpose (gṛha bhēdam) -------------------------------------------
 // One row per block, under that block's Play/Loop controls (see index.html),
 // so it belongs to the *selection* rather than to any one input style - which
 // is what lets Piano have it too.
@@ -289,7 +289,7 @@ function transposeStateForList(list) {
 }
 
 // Where Sa physically is, in semitones from middle C: the Key setting, plus
-// however far graha bhedam has since moved the tonic. This is the number the
+// however far gṛha bhēdam has since moved the tonic. This is the number the
 // Piano places its scale at and the number every tone is measured from, so the
 // two cannot disagree.
 //
@@ -331,13 +331,13 @@ function saOffsetForList(list) {
 // which is the only thing audio.js accepts.
 //
 // Two things sit between a degree and a pitch. The Key setting says which note
-// Sa is, and applies everywhere in the app, always. Graha bhedam rebases the
+// Sa is, and applies everywhere in the app, always. Gṛha bhēdam rebases the
 // selection so the new tonic becomes degree 0 - but the notes themselves never
 // moved: the wheel rotates rather than re-drawing, the Piano's scale slides
 // along fixed keys, and the grey reference marks still name the pitch each
 // position started on. Adding that offset back on is what makes the ear agree
 // with all of it - you hear the same pitches you were already hearing, begun
-// from a different one of them, which is what graha bhedam *is*. Without it the
+// from a different one of them, which is what gṛha bhēdam *is*. Without it the
 // picture said "same notes, new Sa" while the sound said "new notes, same Sa".
 //
 // At Key C4 with no shift this is the identity, so nothing changes until one of
@@ -1511,7 +1511,7 @@ function stopScalePreview() {
 // turnaround index the pause is taken from (see buildCombinedSequence).
 //
 // The degrees are relative to the raga's own Sa, so the Key setting is all
-// that's added - never a graha bhedam offset. A raga you found by name is
+// that's added - never a gṛha bhēdam offset. A raga you found by name is
 // heard from its own Sa, which is what lets two results be compared with each
 // other; the selection above is the thing that gets heard from wherever the
 // tonic has been moved to. Shared by the per-row Play buttons and the wheel's

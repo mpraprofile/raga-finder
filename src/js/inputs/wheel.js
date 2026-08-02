@@ -102,7 +102,7 @@ function nodeRadius(degree) {
 // Piano's labels along its keys - so the spoke a degree occupies is its own
 // position plus that offset. Sa is at 12 o'clock only at zero transpose;
 // after that the S and S' circles have moved round to the new tonic, which is
-// what makes graha bhēdam legible as a rotation rather than as the note set
+// what makes gṛha bhēdam legible as a rotation rather than as the note set
 // silently changing underneath a fixed frame.
 //
 // The twelve spoke *positions* never move - only which swara sits on each.
@@ -141,7 +141,7 @@ export function render(container, props) {
   // the same number. The wheel's twelve spokes are pitch classes *relative to
   // Sa* - it has no fixed physical frame the way the Piano's keys do - so the
   // Key setting has nothing to rotate here and only shows up in the pitch.
-  // Graha bhēdam does both.
+  // Gṛha bhēdam does both.
   const { selected, list, labelPrefs, order, onReplace, summary, insertAt, labelOffset = 0, saOffset = 0 } = props;
   const orderMode = Boolean(order);
 
@@ -412,7 +412,7 @@ function appendNodes(root, { selected, labelPrefs, order, labelOffset }) {
 // The swara that sat on each spoke *before* the transpose, dulled, just outside
 // the note circles. Once the wheel rotates, the spoke at 12 o'clock is no longer
 // Sa, and without this there is nothing left on screen tying the new arrangement
-// to the one it came from - which is exactly what graha bhēdam is about. Reading
+// to the one it came from - which is exactly what gṛha bhēdam is about. Reading
 // a spoke outward gives "this note is now G2; it used to be P", and the two now
 // sit close enough together to be read as one phrase.
 //

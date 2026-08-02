@@ -62,7 +62,7 @@ export function setMuted(value) {
 
 // The one place a number becomes a pitch. Its argument is semitones from
 // middle C, *not* a swara degree: by the time a tone is asked for, the Key
-// setting and any graha bhedam shift have both been folded in, so what arrives
+// setting and any gṛha bhēdam shift have both been folded in, so what arrives
 // here is a physical key on a physical keyboard. Callers get there through
 // soundingDegree (app.js), which is the only thing that knows about either
 // offset.

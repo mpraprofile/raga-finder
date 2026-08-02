@@ -3,7 +3,7 @@
 // A real keyboard, drawn once and never redrawn: the keys are fixed physical
 // notes from G3 to G5 about middle C, and it is the *scale* that moves along
 // them. Two things move it - the Key/Shruti setting, which says which note Sa
-// sits on, and graha bhēdam, which hands the tonic to a different note of the
+// sits on, and gṛha bhēdam, which hands the tonic to a different note of the
 // selection. Both arrive here already added together as `saOffset`, semitones
 // from middle C.
 //
@@ -85,7 +85,7 @@ function whiteNoteCentreWithinKey(index) {
   return ((whiteLabelCentre(index) - index * WHITE_KEY_WIDTH_PCT) / WHITE_KEY_WIDTH_PCT) * 100;
 }
 
-// The pre-graha-bhēdam name for a key, in the app's one reference-annotation
+// The pre-gṛha-bhēdam name for a key, in the app's one reference-annotation
 // format - see stackReferenceLabel. A key outside the selectable octave is
 // named the traditional way, with the sthayi dot that says which octave.
 //
@@ -115,7 +115,7 @@ function originalLabel(degreeFromKey, labelPrefs) {
 // which is honest: those notes really are below the scale being built.
 //
 // `keyOffset` is the Key setting on its own, and is only needed to tell the
-// two kinds of movement apart - the reference strip reports what graha bhēdam
+// two kinds of movement apart - the reference strip reports what gṛha bhēdam
 // did, so it measures from the key rather than from middle C.
 //
 // `freePlay` drops the whole notion of a selection: every key is live,
@@ -154,7 +154,7 @@ export function render(container, props) {
   // Anchored at its key's centre, bottom-aligned, so a plain name sits on the
   // lower line and only a compound one reaches up to the second - exactly how
   // the keys' own labels stack, read the same way from the same column.
-  // Only while graha bhēdam is holding the scale away from its key. Changing
+  // Only while gṛha bhēdam is holding the scale away from its key. Changing
   // the Key setting is not something to annotate: it moves the whole scale
   // bodily, so every key's "before" would be the swara one key along, which
   // says nothing.

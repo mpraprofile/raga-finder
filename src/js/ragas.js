@@ -293,7 +293,7 @@ export function matchOrderedSeparate(ragas, aroSequence, avaSequence) {
   return { exact, contains };
 }
 
-// --- Transpose / graha bhēdam -------------------------------------------
+// --- Transpose / gṛha bhēdam -------------------------------------------
 // Keep the same physical pitches, treat a *different* selected note as Sa.
 // Surfaced in the UI as each block's Transpose row.
 //
@@ -309,7 +309,7 @@ export function matchOrderedSeparate(ragas, aroSequence, avaSequence) {
 // upward, < 0 the previous one - it snaps to notes that are actually selected
 // rather than stepping by an arbitrary semitone, since a free +/-1 rotation
 // produces sets that often don't contain Sa at all, which is not a scale and
-// not what graha bhēdam means.
+// not what gṛha bhēdam means.
 export function grahaTonic(list, direction = 1) {
   // Pitch classes: degrees 0 and 12 are the same swara an octave apart, so
   // they're one candidate tonic, not two. 0 is where the tonic already is,
