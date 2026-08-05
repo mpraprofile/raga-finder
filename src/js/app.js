@@ -348,9 +348,12 @@ function saOffsetForList(list) {
 // for it.
 //
 // The graha half is not applied to the results list's own preview players (see
-// playScaleOnce): a raga found by name is played from its own Sa, so found
+// ragaSequenceInKey): a raga found by name is played from its own Sa, so found
 // ragas can be compared with each other rather than with the scale that led to
-// them. The Key half applies there too, as it does everywhere.
+// them. The Key half applies there too, as it does everywhere. The wheel's
+// centre summary is the deliberate exception among "found raga" players - it
+// names the selection sitting under it, so it follows the shift like the
+// selection does. See ragaSequenceAtTonic.
 function soundingDegree(list, degree) {
   return degree + saOffsetForList(list);
 }
@@ -483,7 +486,7 @@ function renderInputs() {
       // mode both wheels would show the same text (matchSeparate returns
       // one joint result list for both directions), which reads as a bug
       // rather than as information.
-      summary: exactMatchSummary(currentMatches().exact),
+      summary: exactMatchSummary(currentMatches().exact, combined),
       labelOffset: transposeState.combined.offset,
       saOffset: saOffsetFor("combined"),
       keyOffset: keySemitone,
@@ -530,7 +533,7 @@ function renderInputs() {
       labelOffset: transposeState.arohana.offset,
       saOffset: saOffsetFor("arohana"),
       keyOffset: keySemitone,
-      summary: exactMatchSummary(directionMatches(arohanaSel, "arohana")),
+      summary: exactMatchSummary(directionMatches(arohanaSel, "arohana"), arohanaSel),
       ...trayEditingProps(arohanaSel, restartSeparatePlayers),
       onReplace: (newList) => {
         advanceInsertPoint(newList.length - arohanaSel.length);
@@ -573,7 +576,7 @@ function renderInputs() {
       labelOffset: transposeState.avarohana.offset,
       saOffset: saOffsetFor("avarohana"),
       keyOffset: keySemitone,
-      summary: exactMatchSummary(directionMatches(avarohanaSel, "avarohana")),
+      summary: exactMatchSummary(directionMatches(avarohanaSel, "avarohana"), avarohanaSel),
       ...trayEditingProps(avarohanaSel, restartSeparatePlayers),
       onReplace: (newList) => {
         advanceInsertPoint(newList.length - avarohanaSel.length);
@@ -632,10 +635,14 @@ function currentMatches() {
 // churned on every tap while saying nothing about the shape being drawn
 // around it. No exact match means an empty centre, which is itself the
 // answer. Other input styles ignore this prop.
-function exactMatchSummary(exact) {
+//
+// `list` is the selection this wheel is drawing, and it is what lets the
+// centre play at the shifted tonic rather than at the raga's own Sa - see
+// ragaSequenceAtTonic.
+function exactMatchSummary(exact, list) {
   const top = exact[0] ?? null;
   if (!top) return null;
-  return { text: top.name, onPlay: () => playScaleOnce(top) };
+  return { text: top.name, onPlay: () => playScaleOnce(top, list) };
 }
 
 // Separate mode gives each wheel its own centre, answering for its own
@@ -1509,26 +1516,48 @@ function stopScalePreview() {
 
 // A found raga's own scale, as pitches: arohana then avarohana, with the
 // turnaround index the pause is taken from (see buildCombinedSequence).
-//
-// The degrees are relative to the raga's own Sa, so the Key setting is all
-// that's added - never a gṛha bhēdam offset. A raga you found by name is
-// heard from its own Sa, which is what lets two results be compared with each
-// other; the selection above is the thing that gets heard from wherever the
-// tonic has been moved to. Shared by the per-row Play buttons and the wheel's
-// centre summary, which are two players of the same thing and had drifted
-// apart once already.
-function ragaSequenceInKey(raga) {
-  const arohanaDegrees = raga.arohana.map((n) => n.degree + keySemitone);
-  const avarohanaDegrees = raga.avarohana.map((n) => n.degree + keySemitone);
+// `saOffset` is where the raga's own degree 0 is put, in semitones from
+// middle C - the one thing the two callers below disagree about.
+function ragaSequenceAt(raga, saOffset) {
+  const arohanaDegrees = raga.arohana.map((n) => n.degree + saOffset);
+  const avarohanaDegrees = raga.avarohana.map((n) => n.degree + saOffset);
   return { sequence: [...arohanaDegrees, ...avarohanaDegrees], pauseAfterIndex: arohanaDegrees.length - 1 };
 }
 
-function playScaleOnce(raga) {
+// For a raga found in a *list* - the results rows, the name search, the chakra
+// chart's detail panel. Heard from its own Sa with only the Key applied, never
+// a gṛha bhēdam offset, so that two results can be compared with each other
+// rather than with whatever selection led to them.
+function ragaSequenceInKey(raga) {
+  return ragaSequenceAt(raga, keySemitone);
+}
+
+// For the swara wheel's centre summary, which is a different question with a
+// different right answer, even though it names the same kind of thing.
+//
+// That name is what the *selection under it* currently reads as, and after a
+// gṛha bhēdam the selection has been rebased so the new tonic is degree 0 -
+// which is the very degree 0 the matched raga's scale is written against. So
+// its notes are the notes on screen, and it has to sound from where the tonic
+// was moved to, exactly as that block's own Play button does. Playing it from
+// the unshifted Sa instead would name the rotation and then refuse to let you
+// hear it, which is the same eye-and-ear disagreement the shift itself was
+// fixed for.
+//
+// With no shift `saOffsetForList` is the identity on the Key, so outside gṛha
+// bhēdam this and ragaSequenceInKey are the same sequence.
+function ragaSequenceAtTonic(raga, list) {
+  return ragaSequenceAt(raga, saOffsetForList(list));
+}
+
+// `list` picks which of the two above is used: the selection whose wheel the
+// summary sits in, or null for a result row.
+function playScaleOnce(raga, list = null) {
   stopActiveRowPreview();
   combinedPlayer.stop();
   stopAllSeparatePlayers();
 
-  const { sequence, pauseAfterIndex } = ragaSequenceInKey(raga);
+  const { sequence, pauseAfterIndex } = list ? ragaSequenceAtTonic(raga, list) : ragaSequenceInKey(raga);
   const myToken = ++scalePreviewToken;
   let i = 0;
 
