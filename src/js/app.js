@@ -22,7 +22,7 @@ import { playPianoTone, setMuted } from "./audio.js";
 import { REFERENCE_ROWS, referenceRowCode, noteLabel, degreeOf } from "./notation.js";
 import { checkAgainstStored } from "./melakarta.js";
 import { mountMelaChart, renderKatapayadiReference } from "./mela-chart.js";
-import { ragaHref, renderRagaPage, renderRagaNotFound, renderRagaLoading } from "./raga-page.js";
+import { ragaHref, janyaUnit, renderRagaPage, renderRagaNotFound, renderRagaLoading } from "./raga-page.js";
 import * as piano from "./inputs/piano.js";
 import * as buttons from "./inputs/buttons.js";
 import * as wheel from "./inputs/wheel.js";
@@ -34,6 +34,63 @@ const NOTE_GAP_MS = 450;
 // repeat - gives the ear a moment to register "that was the end" before
 // it starts again.
 const LOOP_END_DELAY_MS = 900;
+
+// Playback speed, as a divisor on both delays above: 1x is the pace every
+// scale has always played at, 2x and 3x are for when you already know the
+// shape and want to hear it as a phrase rather than as separate notes.
+//
+// One setting for the whole app rather than one per surface. The control for
+// it is on the raga page, which is where you sit and replay a scale, but a
+// tempo that applied there and not in the finder's result rows would mean the
+// same button sounded different depending on which list you reached it from.
+// Persisted like the other preferences: anyone who speeds it up is mid-task.
+//
+// The note's own tone is untouched. playPianoTone rings for 1.4s and at 3x the
+// gap is 150ms, so fast passages overlap and ring into each other - which is
+// what a fast passage does on a real instrument, and cutting the release to
+// prevent it would make the top speed sound clipped rather than quick.
+const TEMPO_STORAGE_KEY = "playbackTempo";
+const TEMPO_CHOICES = [1, 2, 3];
+let playbackTempo = 1;
+
+function noteGap() {
+  return NOTE_GAP_MS / playbackTempo;
+}
+
+function loopEndDelay() {
+  return LOOP_END_DELAY_MS / playbackTempo;
+}
+
+// Four copies of this control exist at once - one beside each of the three Loop
+// toggles, and one on a raga page - and they are four views of a single number,
+// not four settings. So every radio carries data-tempo, one delegated listener
+// hears all of them, and one pass writes the answer back to all of them. Adding
+// a fifth needs no wiring beyond the attribute.
+function syncTempoControls() {
+  for (const input of document.querySelectorAll("input[data-tempo]")) {
+    input.checked = Number(input.dataset.tempo) === playbackTempo;
+  }
+}
+
+function initTempo() {
+  const stored = Number(localStorage.getItem(TEMPO_STORAGE_KEY));
+  if (TEMPO_CHOICES.includes(stored)) playbackTempo = stored;
+  // Delegated, and on the document rather than on each group: a raga page's
+  // pills are built after this runs and replaced on every route change, so
+  // anything bound per-element would have to be rebound each time.
+  document.addEventListener("change", (event) => {
+    const input = event.target.closest?.("input[data-tempo]");
+    if (input?.checked) setTempo(Number(input.dataset.tempo));
+  });
+  syncTempoControls();
+}
+
+function setTempo(rate) {
+  if (!TEMPO_CHOICES.includes(rate)) return;
+  playbackTempo = rate;
+  localStorage.setItem(TEMPO_STORAGE_KEY, String(rate));
+  syncTempoControls();
+}
 
 const ICON_UNMUTED =
   '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M3 10v4h4l5 5V5L7 10H3z"/><path d="M14.5 6.09v1.86c1.6.87 2.5 2.28 2.5 4.05s-.9 3.18-2.5 4.05v1.86c2.89-.86 5-3.54 5-6.91s-2.11-6.05-5-6.91z"/></svg>';
@@ -832,12 +889,24 @@ function renderResults() {
 
   const matched = currentMatchedSets();
   resultsEl.appendChild(countsRow(exact.length, contains.length));
+  // Load swaras on every row *except* the whole-scale exact ones. Those already
+  // hold the selection you built - pressing it there would replace the swaras
+  // on the keyboard with the identical set. Everywhere else it is the point of
+  // the row: a direction-exact match ("exact (arohana)") differs from what you
+  // played in the other direction, and a "also contains" row differs by more,
+  // so loading it is how you hear what the difference sounds like.
+  //
+  // This used to be withheld from the whole finder on the reasoning that you
+  // had built the selection and would not want it overwritten. That holds for
+  // the row that already *is* your selection, and for no other row.
   for (const raga of exact) {
     const kind = exactKind && exactKind.get(raga.id);
     const badge = { text: kind ? `exact (${kind})` : "exact", tier: "exact" };
-    resultsEl.appendChild(renderRow(raga, badge, matched));
+    resultsEl.appendChild(renderRow(raga, badge, matched, true, { loadable: Boolean(kind) }));
   }
-  for (const raga of contains) resultsEl.appendChild(renderRow(raga, null, matched));
+  for (const raga of contains) {
+    resultsEl.appendChild(renderRow(raga, null, matched, false, { loadable: true }));
+  }
 }
 
 // The tallies that used to sit in the middle of the wheel. They belong here:
@@ -1034,44 +1103,10 @@ function renderRow(raga, badge, matched, tint = Boolean(badge && badge.tier === 
     chips.appendChild(el);
   }
 
-  // A janya gets a chip too, so the line is chips either way - but the parent
-  // is a cross-reference to another raga, not a label from a closed set, and
-  // "of melakarta #29-Dhirasankarabharanam" is far too long to read inside a
-  // pill. So the chip carries the category and the reference trails it as a
-  // qualifier, set in the chip's own size and colour so the two read as one
-  // object. They are wrapped together in .result-janya, which is the single
-  // flex item here: the line can wrap around the pair but never between them,
-  // so the qualifier can never be orphaned from the chip it qualifies.
+  // Built by raga-page.js and shared with it, so a janya wears the same chip
+  // and the same trailing reference here as on its own page - see janyaUnit.
   if (!raga.is_melakarta) {
-    const janya = document.createElement("span");
-    janya.className = "result-janya";
-    const janyaChip = document.createElement("span");
-    janyaChip.className = "badge badge-janya";
-    janyaChip.textContent = "Janya";
-    janya.appendChild(janyaChip);
-
-    const note = document.createElement("span");
-    note.className = "result-janya-note";
-    if (raga.mela == null) {
-      note.textContent = "parent melakarta unknown";
-    } else {
-      note.append("of melakarta ");
-      // U+2011 non-breaking hyphen, as melaContext uses: the number and the
-      // name are one identifier and must not break across lines (ragas.js).
-      const label = `#${raga.mela}${melaNames.has(raga.mela) ? `‑${melaNames.get(raga.mela)}` : ""}`;
-      const parent = melaRagas.get(raga.mela);
-      if (parent) {
-        const link = document.createElement("a");
-        link.className = "parent-mela-link";
-        link.href = ragaHref(parent);
-        link.textContent = label;
-        note.appendChild(link);
-      } else {
-        note.append(label);
-      }
-    }
-    janya.appendChild(note);
-    chips.appendChild(janya);
+    chips.appendChild(janyaUnit(raga, melaNames.get(raga.mela), melaRagas.get(raga.mela)));
   }
 
   // One line each, rather than "Arohana: ... | Avarohana: ..." sharing one.
@@ -1576,7 +1611,6 @@ const ragaPageDeps = {
   // state the file is in today anyway - empty.
   detailsFor: (id) => ragaDetails?.ragas?.[id] || null,
   citation: (cite) => ragaDetails?.citations?.[cite] || null,
-  authoringMode: () => authoringMode,
   // Every janya naming this melakarta as parent, alphabetically. Not
   // byMelakartaThenName: that sort exists to float the answer a *search* is
   // reaching for to the top, and this is a directory of siblings where nothing
@@ -1596,6 +1630,10 @@ const ragaPageDeps = {
   getChakras: () => chakras,
   getKatapayadi: () => katapayadi,
   loadButton,
+  // The tempo pills. Read on every play rather than captured when a player is
+  // built, so changing the speed applies to the next press without the page
+  // needing to re-render its buttons.
+  tempo: { choices: TEMPO_CHOICES, get: () => playbackTempo, set: setTempo },
   // The page's three Play buttons join the same single-player-at-a-time
   // registry the result rows use, so a row preview and a detail page cannot
   // sound over each other - they are one app, and this page is reached from
@@ -1823,13 +1861,13 @@ function makePlayer({ buildSequence, buttonEls, getLoop, onStart, onStop, render
           return;
         }
         i = 0;
-        setTimeout(step, LOOP_END_DELAY_MS); // pause at the loop boundary before the pass repeats
+        setTimeout(step, loopEndDelay()); // pause at the loop boundary before the pass repeats
         return;
       }
       playPianoTone(sequence[i]);
       const atTurnaround = i === pauseAfterIndex;
       i++;
-      setTimeout(step, atTurnaround ? LOOP_END_DELAY_MS : NOTE_GAP_MS);
+      setTimeout(step, atTurnaround ? loopEndDelay() : noteGap());
     }
     step();
   }
@@ -2058,7 +2096,7 @@ function playScaleOnce(raga, list = null) {
     playPianoTone(sequence[i]);
     const atTurnaround = i === pauseAfterIndex;
     i++;
-    setTimeout(step, atTurnaround ? LOOP_END_DELAY_MS : NOTE_GAP_MS);
+    setTimeout(step, atTurnaround ? loopEndDelay() : noteGap());
   })();
 }
 
@@ -2340,9 +2378,9 @@ function buildMelaChart() {
     getLabelPrefs: () => labelPrefs,
     // The chart's detail panel is a results list of exactly one row, so it
     // gets the row rendering, the per-row play button and the activeRowPlayer
-    // mutual exclusion for nothing. `loadable` is right here in a way it
-    // isn't in the note finder: you picked this raga by name, you didn't
-    // build the selection it would overwrite.
+    // mutual exclusion for nothing. `loadable` always, as everywhere else now
+    // except a whole-scale exact finder hit - you picked this raga off the
+    // chart, so there is no selection of yours for it to overwrite.
     renderRow: (raga) => renderRow(raga, null, noMatchedSets(), false, { loadable: true }),
   });
 }
@@ -2450,24 +2488,16 @@ function initLabelPrefs() {
   }
 }
 
-// Authoring mode: persisted like the other preferences, and for the same
-// reason - anyone who turns it on is mid-task and would not thank the app for
-// forgetting between reloads.
-const AUTHORING_STORAGE_KEY = "authoringMode";
-let authoringMode = false;
-
-function initAuthoringMode() {
-  const toggle = document.getElementById("authoring-toggle");
-  authoringMode = localStorage.getItem(AUTHORING_STORAGE_KEY) === "on";
-  toggle.checked = authoringMode;
-  toggle.addEventListener("change", () => {
-    authoringMode = toggle.checked;
-    localStorage.setItem(AUTHORING_STORAGE_KEY, authoringMode ? "on" : "off");
-    // The raga page is the only surface that reads it, and it may be open
-    // behind this one - the same staleness the numbering preference has.
-    refreshRagaPage();
-  });
-}
+// Authoring mode used to live here: a toggle on the Raga Reference page that,
+// when on, ended every raga's page with a list of the fields nothing had been
+// gathered for. Removed 2026-08-15, along with the block it revealed.
+//
+// It was solving a problem that does not exist. A raga page already omits any
+// section with nothing in it - detailsBlock() returns null when none of its
+// fields are populated - so an uncrowded page is not a mode to opt into, it is
+// simply what the page does. What the toggle added was the *opposite*: a way to
+// put the project's own to-do list in front of a reader. That belongs in
+// PROGRESS.md, and no user-facing control was ever needed for either state.
 
 function initTheme() {
   const saved = localStorage.getItem(THEME_STORAGE_KEY) || "system";
@@ -2488,7 +2518,7 @@ async function init() {
   initTheme();
   initKey(); // before the first renderInputs() below - it decides where the Piano's scale sits
   initLabelPrefs(); // before buildReferenceTable() and renderInputs() - both read labelPrefs
-  initAuthoringMode();
+  initTempo();
   buildReferenceTable();
   renderMuteButton();
   updateLayoutVisibility(); // also runs updateControlAvailability() - Play both defaults checked

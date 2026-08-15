@@ -109,12 +109,14 @@
          a scale still fits exactly, with nothing below it. It is the one note
          on the list twice, so those two are the only entries that carry an
          octave; every other name appears once and doesn't need one. The range
-         is stated once, in the legend.
+         is not stated in the legend: opening the list shows it, and a heading
+         that reads "Key / Shruti" says what the control is without spending
+         half its width on a bound the first click reveals.
          The second number is the kattai/shruti-box numbering: white keys 1..7
          from C, black keys the half above the key below them. There is no 3.5
          or 7.5 - E-F and B-C have no black key between them. -->
     <fieldset class="control-group" id="key-group">
-      <legend>Key <span class="legend-hint">(G3 to G4)</span> / Shruti</legend>
+      <legend>Key / Shruti</legend>
       <label class="select-label" for="key-select">
         <select id="key-select" aria-label="Key - which note Sa sits on, from G3 to G4">
           <option value="-5">G3 / 5</option>
@@ -155,6 +157,12 @@
       <div class="playback-controls" id="combined-controls">
         <button id="play-btn">Play</button>
         <label><input type="checkbox" id="loop-toggle"> Loop</label>
+        <fieldset class="tempo-pills" id="combined-tempo">
+          <legend>Tempo</legend>
+          <label><input type="radio" name="tempo-combined" data-tempo="1" checked> 1x</label>
+          <label><input type="radio" name="tempo-combined" data-tempo="2"> 2x</label>
+          <label><input type="radio" name="tempo-combined" data-tempo="3"> 3x</label>
+        </fieldset>
       </div>
     </div>
     <div class="transpose-row" id="combined-transpose">
@@ -181,6 +189,12 @@
         <div class="playback-controls" id="arohana-controls">
           <button id="arohana-play-btn">Play</button>
           <label><input type="checkbox" id="arohana-loop-toggle"> Loop</label>
+          <fieldset class="tempo-pills" id="arohana-tempo">
+            <legend>Tempo</legend>
+            <label><input type="radio" name="tempo-arohana" data-tempo="1" checked> 1x</label>
+            <label><input type="radio" name="tempo-arohana" data-tempo="2"> 2x</label>
+            <label><input type="radio" name="tempo-arohana" data-tempo="3"> 3x</label>
+          </fieldset>
         </div>
       </div>
       <div class="transpose-row" id="arohana-transpose">
@@ -205,6 +219,12 @@
         <div class="playback-controls" id="avarohana-controls">
           <button id="avarohana-play-btn">Play</button>
           <label><input type="checkbox" id="avarohana-loop-toggle"> Loop</label>
+          <fieldset class="tempo-pills" id="avarohana-tempo">
+            <legend>Tempo</legend>
+            <label><input type="radio" name="tempo-avarohana" data-tempo="1" checked> 1x</label>
+            <label><input type="radio" name="tempo-avarohana" data-tempo="2"> 2x</label>
+            <label><input type="radio" name="tempo-avarohana" data-tempo="3"> 3x</label>
+          </fieldset>
         </div>
       </div>
       <div class="transpose-row" id="avarohana-transpose">
@@ -244,26 +264,6 @@
         </button>
         <h1>Raga Reference</h1>
       </div>
-
-      <!-- Authoring mode, off by default and off for everyone reading. On, a
-           raga's page lists the fields nothing has been gathered for yet -
-           the reminder specs/06 asks for, kept out of the family's way. It
-           lives here rather than in the main Controls panel because it is a
-           tool for working on the app, not for using it. -->
-      <details class="ref-block">
-        <summary>Authoring</summary>
-        <label class="authoring-toggle">
-          <input type="checkbox" id="authoring-toggle">
-          Show what is not yet sourced on each raga page
-        </label>
-        <p class="label-prefs-intro">
-          Fields 10&ndash;15 of the raga page (gamaka, prayogas, mood, time of day,
-          deities, songs) have no source that publishes them in parseable form,
-          so they are gathered by hand into <code>data/raga_details.json</code> and
-          are empty until somebody has a citation for them. With this on, each
-          raga page ends with the list of what it is still missing.
-        </p>
-      </details>
 
       <!-- Collapsed by default: this page opens on the chart. The table is
            still built at load and rebuilt on every preference change -

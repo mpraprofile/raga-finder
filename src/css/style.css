@@ -537,16 +537,6 @@ h1 {
   padding: 0 0.3rem;
 }
 
-/* A detail carried by the legend rather than repeated down a list - the Key
-   dropdown's range, which every one of its thirteen entries would otherwise
-   have to spell out with an octave number. Smaller again than the legend it
-   sits in, so it reads as a hint attached to the label rather than as part of
-   the name. */
-.control-group legend .legend-hint {
-  font-size: 0.85em;
-  opacity: 0.8;
-}
-
 .control-group label {
   font-size: 0.85rem;
   white-space: nowrap;
@@ -583,7 +573,8 @@ h1 {
    control-group. The native radio stays in the DOM (for click/keyboard/
    screen-reader support) but visually hidden - the label itself becomes
    the pill, and reflects :checked via :has(). */
-.control-group label:has(input[type="radio"]) {
+.control-group label:has(input[type="radio"]),
+.tempo-pills label:has(input[type="radio"]) {
   position: relative;
   padding: 0.3rem 0.75rem;
   border-radius: 999px;
@@ -591,23 +582,27 @@ h1 {
   transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 
-.control-group label:has(input[type="radio"]):hover {
+.control-group label:has(input[type="radio"]):hover,
+.tempo-pills label:has(input[type="radio"]):hover {
   border-color: color-mix(in srgb, var(--card-border) 40%, var(--accent) 60%);
 }
 
-.control-group label:has(input[type="radio"]:checked) {
+.control-group label:has(input[type="radio"]:checked),
+.tempo-pills label:has(input[type="radio"]:checked) {
   background: var(--accent);
   color: white;
   border-color: var(--accent);
   font-weight: 600;
 }
 
-.control-group label:has(input[type="radio"]:focus-visible) {
+.control-group label:has(input[type="radio"]:focus-visible),
+.tempo-pills label:has(input[type="radio"]:focus-visible) {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-.control-group input[type="radio"] {
+.control-group input[type="radio"],
+.tempo-pills input[type="radio"] {
   position: absolute;
   opacity: 0;
 }
@@ -1403,6 +1398,8 @@ h1 {
   --trad-fg: oklch(0.42 0.1 292);
   --trad-hi-bg: oklch(0.86 0.085 292);
   --trad-hi-fg: oklch(0.3 0.11 292);
+  --janya-bg: oklch(0.95 0.035 12);
+  --janya-fg: oklch(0.45 0.085 12);
   /* Chakra-chart cell tints, and theme-aware for the same reason --chip-idle
      is: the light theme needs roughly twice the mix to read as the same
      weight. --cell-tint is the innermost ring, --cell-step what each ring
@@ -1430,6 +1427,8 @@ h1 {
     --trad-fg: oklch(0.9 0.035 292);
     --trad-hi-bg: oklch(0.48 0.09 292);
     --trad-hi-fg: oklch(0.96 0.025 292);
+    --janya-bg: oklch(0.35 0.045 12);
+    --janya-fg: oklch(0.87 0.055 12);
     --cell-tint: 0.22;
     --cell-step: 0.026;
     --cell-hover: 0.45;
@@ -1449,6 +1448,8 @@ h1 {
   --trad-fg: oklch(0.9 0.035 292);
   --trad-hi-bg: oklch(0.48 0.09 292);
   --trad-hi-fg: oklch(0.96 0.025 292);
+  --janya-bg: oklch(0.35 0.045 12);
+  --janya-fg: oklch(0.87 0.055 12);
   --cell-tint: 0.22;
   --cell-step: 0.026;
   --cell-hover: 0.45;
@@ -1471,6 +1472,8 @@ h1 {
   --trad-fg: oklch(0.42 0.1 292);
   --trad-hi-bg: oklch(0.86 0.085 292);
   --trad-hi-fg: oklch(0.3 0.11 292);
+  --janya-bg: oklch(0.95 0.035 12);
+  --janya-fg: oklch(0.45 0.085 12);
 }
 
 /* Palette C - swara families (the default). A hue per family, ordered
@@ -2196,6 +2199,12 @@ h1 {
   padding: 0.15rem 0.45rem;
   margin-left: 0.4rem;
   vertical-align: middle;
+  /* A chip is one token and breaks as one. "exact (avarohana)" was splitting
+     after "exact", leaving a bare "(avarohana)" pill fragment on the next line
+     under the raga's name - visible as soon as those rows gained a Load swaras
+     button to compete with for width. The whole chip wraps now, or none of it
+     does. */
+  white-space: nowrap;
 }
 
 .badge-exact {
@@ -2281,25 +2290,39 @@ h1 {
   min-width: 0;
 }
 
-/* Quieter than .badge-mela on purpose. Amber means "one of the 72" - the status
-   the list already sorts to the top - and spending it on the 906 janyas too
-   would leave it meaning nothing. */
+/* Rose, and deliberately the quietest colour in the row. Chroma 0.035/0.045
+   against the melakarta chip's 0.115 and the tradition chip's 0.085: it has a
+   hue rather than a tint, but it never competes with the green "exact" or the
+   amber "Melakarta #29", which are the two that carry news. It sits on 906 of
+   978 rows, so it has to be legible without ever being the thing you notice
+   first.
+
+   Hue 12 on the warm side, not the cool side. A teal (200) was tried first and
+   rejected: it is nominally cyan, but a result row is already full of green -
+   every matched swara is a green pill and "exact" is a green badge - and at
+   this chroma the eye files a low-saturation cyan under "more of that green".
+   Warm has nothing else in the row to be confused with; the only other warm
+   hue here is the melakarta amber at 78, which is 66 degrees away and three
+   times the chroma. Clear of violet (292) and the accent blue (265) too.
+
+   Pale ground with dark text in light themes, dark ground with light text in
+   dark - the same split .badge-mela and the match highlight make, because a
+   fixed tint that reads as soft over white goes muddy over near-black. */
 .badge-janya {
-  color: canvastext;
-  background: none;
-  border: 1px solid var(--card-border);
-  opacity: 0.75;
+  background: var(--janya-bg);
+  color: var(--janya-fg);
   font-weight: 500;
 }
 
-/* Set to match the chip it trails - same size, same weight, same muted
-   strength - so the two read as one object with the pill on its front, rather
-   than as a chip that happens to have a sentence after it. */
+/* The same colour as the chip it trails, and the same size and weight, so the
+   pair reads as one object with the pill on its front rather than as a chip
+   that happens to have a sentence after it. --janya-fg is chosen to sit on the
+   page as well as on the chip: it is the far end of the lightness range from
+   both grounds in either theme. */
 .result-janya-note {
   font-size: 0.7rem;
   font-weight: 500;
-  color: canvastext;
-  opacity: 0.75;
+  color: var(--janya-fg);
 }
 
 /* Above the card's stretched name link, like Play and Load swaras - without
@@ -2473,7 +2496,7 @@ h1 {
 /* The hemispheres, themed as hemispheres. An arc band behind each half's
    chakra labels, in neutral tones rather than hues - it has to read as "which
    side of the line am I on" without competing with the six R-G hues in the
-   cells, whose whole job now is to match across the diameter. */
+   cells, whose whole job now is to match across the diameter.
    The hub carries the same two tones on the same diameter, so each hemisphere
    is tinted continuously from the centre out to the rim and the M1/M2 labels
    sit on their own half's ground. */
@@ -2718,21 +2741,37 @@ h1 {
   max-width: 44rem;
 }
 
+/* Plain block again now that the chips have moved out. It was a wrapping flex
+   row to lay the badges out beside the name; with nothing left in here but the
+   name, that machinery only stopped a long name wrapping the way a heading
+   normally does. */
 .raga-title {
   font-family: var(--font-headings, inherit);
   font-size: 1.6rem;
   margin: 0 0 0.35rem;
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0.5rem;
 }
 
-/* "also called", the parent mela line and the school/composer line are all
-   secondary to the name and set the same way, so the eye takes the three as
-   one block of context rather than three competing statements. */
+/* The chips' own line, directly under the heading - same construction as a
+   result row's .result-chips, so a raga wears its labels the same way in the
+   list and on its page. The .badge left margin is cancelled for the same
+   reason it is there: the flex gap does that job here. */
+.raga-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0 0 0.5rem;
+}
+
+.raga-chips .badge {
+  margin-left: 0;
+}
+
+/* "also called" and the school/composer line are both secondary to the name and
+   set the same way, so the eye takes them as one block of context rather than
+   two competing statements. The parent mela line used to be the third of these;
+   it is now the Janya chip's own qualifier on the line above. */
 .raga-alsocalled,
-.raga-mela-line,
 .raga-attrib {
   margin: 0.15rem 0;
   opacity: 0.75;
@@ -2793,6 +2832,84 @@ h1 {
   gap: 0.5rem;
   margin-top: 0.75rem;
   flex-wrap: wrap;
+}
+
+/* The 1x/2x/3x group, wherever it appears: under Play both on a raga page, and
+   beside each of the three Loop toggles on the finder. It takes the Controls
+   panel's segmented-pill look (the selectors above name it alongside
+   .control-group) but not the card those groups sit in - every place this
+   appears is already inside a framed widget or a section of its own.
+
+   A bare <fieldset> carries browser default border, margin and padding that
+   have nothing to do with this, so all three are zeroed rather than inherited. */
+.tempo-pills {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  border: none;
+  box-shadow: none;
+  background: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  /* Shrink to the pills. In the finder this is already what happens - the
+     fieldset is a flex item in the widget header - but on a raga page it is a
+     block and would stretch the whole section, which would centre the legend
+     over the section rather than over the three pills it names. */
+  width: fit-content;
+
+  /* Puts the *pills* on the row's centreline, not the group's.
+     A legend is the fieldset's caption: it sits above the pills and counts
+     toward the group's height, so `align-items: center` on .playback-controls
+     was centring caption-plus-pills and leaving the pills half a caption below
+     the Loop toggle beside them.
+     Flexbox centres an item's *margin* box, so a bottom margin of exactly one
+     caption's height makes the box symmetrical about the pills: caption above,
+     an equal empty strip below, pills in the middle of both. The pills' own
+     centreline then lands on the line's centreline, in every row that centres
+     its items, with no per-instance nudging.
+     Absolutely positioning the caption instead would also work and need no
+     number at all - but it then hangs outside the header, and measured, it
+     cleared the Controls panel above by 5.6px. Too little to trust to a font
+     the app doesn't ship. */
+  --tempo-legend-size: 0.75rem;
+  --tempo-legend-leading: 1.2;
+  margin-bottom: calc(var(--tempo-legend-size) * var(--tempo-legend-leading));
+}
+
+/* Centred over the three pills rather than left-aligned: it labels the set, and
+   sitting over the first pill it read as belonging to that one. Its height is
+   what --tempo-legend-h below is cancelling, so the two are declared together. */
+.tempo-pills legend {
+  font-size: var(--tempo-legend-size);
+  line-height: var(--tempo-legend-leading);
+  opacity: 0.7;
+  padding: 0;
+  width: 100%;
+  text-align: center;
+}
+
+/* Narrower than the Controls panel's pills, which is where the shared rule sets
+   the padding, but only across. Those pills are the only thing on their row and
+   can afford the width; these share a widget header with Clear, Play and Loop,
+   and at full width three of them plus a legend wrapped that header onto a
+   second line. "1x" needs far less room beside it than "Swara wheel" does. The
+   vertical padding is untouched, so a tempo pill stands exactly as tall as
+   every other pill in the app and the row's controls still line up. */
+.tempo-pills label:has(input[type="radio"]) {
+  padding-left: 0.45rem;
+  padding-right: 0.45rem;
+}
+
+/* On the raga page it is a block under Play both rather than one item in a
+   centring toolbar, so it needs the gap above that the finder's copies get from
+   their flex row - and none of the bottom margin, which exists purely to put
+   the pills on a flex line's centreline. Nothing here is being centred against,
+   so that margin would just be an unexplained 14px of air above Classification. */
+.raga-tempo {
+  margin-top: 0.6rem;
+  margin-bottom: 0;
 }
 
 .raga-play-both-label {
@@ -3079,13 +3196,6 @@ h1 {
   border-bottom: none;
 }
 
-.authoring-toggle {
-  display: block;
-  margin: 0.5rem 0;
-  font-size: 0.9rem;
-  cursor: pointer;
-}
-
 /* A note's credit line. Sits directly under the sentence it attributes, small
    and quiet, but always visible - the whole point of the citation rule is that
    a reader can see where a claim came from without hunting for it. */
@@ -3095,20 +3205,3 @@ h1 {
   opacity: 0.6;
 }
 
-.raga-unsourced {
-  columns: 2;
-  column-gap: 2rem;
-  font-size: 0.9rem;
-  opacity: 0.7;
-}
-
-.raga-unsourced li {
-  break-inside: avoid;
-  padding: 0.15rem 0;
-}
-
-@media (max-width: 480px) {
-  .raga-unsourced {
-    columns: 1;
-  }
-}

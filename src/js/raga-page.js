@@ -41,13 +41,60 @@ function section(title) {
   return wrap;
 }
 
+// The "Janya · of melakarta #29-Dhirasankarabharanam" unit, used by a result
+// row and by this page's own chip line. It lives here, and is exported rather
+// than written twice, because the two are meant to be the same object: a raga
+// should wear its labels identically in a list and on its own page, and two
+// copies of this markup would drift the first time one of them was touched.
+//
+// A janya gets a chip like a melakarta does, but the parent is a
+// cross-reference to another raga rather than a label from a closed set, and
+// "of melakarta #29-Dhirasankarabharanam" is far too long to read inside a
+// pill. So the chip carries the category and the reference trails it as a
+// qualifier in the chip's own size and colour, the two reading as one object.
+// Both sit in one .result-janya flex item: the line wraps around the pair,
+// never between them, so the qualifier can never be orphaned from its chip.
+//
+// `parent` is the parent melakarta's raga (or null) - passing it in rather than
+// looking it up keeps this free of any particular caller's data plumbing.
+export function janyaUnit(raga, parentName, parent) {
+  const wrap = el("span", "result-janya");
+  wrap.appendChild(el("span", "badge badge-janya", "Janya"));
+
+  const note = el("span", "result-janya-note");
+  if (raga.mela == null) {
+    note.textContent = "parent melakarta unknown";
+  } else {
+    note.append("of melakarta ");
+    // U+2011 non-breaking hyphen, as melaContext uses: the number and the name
+    // are one identifier and must not break across lines (ragas.js).
+    const label = `#${raga.mela}${parentName ? `‑${parentName}` : ""}`;
+    if (parent) {
+      const link = el("a", "parent-mela-link", label);
+      link.href = ragaHref(parent);
+      note.appendChild(link);
+    } else {
+      note.append(label);
+    }
+  }
+  wrap.appendChild(note);
+  return wrap;
+}
+
 // --- 1. Identity ----------------------------------------------------------
 
 function identityBlock(raga, deps) {
   const head = el("header", "raga-head");
 
+  // The name has the heading to itself. The chips sit on their own line under
+  // it, as they do on a result row: inside the <h2> they were part of the
+  // heading's text, so a long name pushed them to a second line at an arbitrary
+  // point and they read as a tail on the title rather than as a set.
   const title = el("h2", "raga-title");
   title.append(raga.name);
+  head.appendChild(title);
+
+  const chips = el("div", "raga-chips");
   // Both traditions are badged, and the tradition comes first. Until
   // 2026-08-14 only the 43 Hindustani rows were, on the reasoning that
   // Carnatic is this app's unmarked default - but the *names* carried a
@@ -57,24 +104,24 @@ function identityBlock(raga, deps) {
   // gone the badge is the only carrier, and "no badge" is not something a
   // reader can be asked to interpret.
   const isHindustani = raga.tradition === "hindustani";
-  title.appendChild(el("span", `badge badge-tradition${isHindustani ? " hindustani" : ""}`,
+  chips.appendChild(el("span", `badge badge-tradition${isHindustani ? " hindustani" : ""}`,
     isHindustani ? "Hindustani" : "Carnatic"));
-  // The number rides in the chip, so the mela line below is skipped for a
-  // melakarta - it said "Melakarta #29" and nothing more, which the chip now
-  // says. A janya's line carries its parent's name too and stays.
+  // Melakarta or janya, on the same line and in the same shapes a result row
+  // uses. The number rides in the chip either way, so the prose mela line this
+  // page used to carry underneath is gone: for a melakarta it repeated the chip
+  // exactly, and for a janya it is now this unit's own qualifier.
   if (raga.is_melakarta) {
-    title.appendChild(el("span", "badge badge-mela", `Melakarta #${raga.mela}`));
+    chips.appendChild(el("span", "badge badge-mela", `Melakarta #${raga.mela}`));
+  } else {
+    const parent = deps.melakartaFor?.(raga.mela) || null;
+    chips.appendChild(janyaUnit(raga, parent?.name || deps.melaNames?.get(raga.mela), parent));
   }
-  head.appendChild(title);
+  head.appendChild(chips);
 
   // Aliases sit beside the name rather than in a section of their own: 14
   // ragas have any, and "also called" reads as part of the name anyway.
   if (raga.aliases?.length) {
     head.appendChild(el("p", "raga-alsocalled", `also called ${raga.aliases.join(", ")}`));
-  }
-
-  if (!raga.is_melakarta) {
-    head.appendChild(el("p", "raga-mela-line", deps.melaContext(raga, deps.melaNames)));
   }
 
   // Three rarely-filled fields (school 1, qualifier 2, composer 10) share one
@@ -165,6 +212,46 @@ function scaleBlock(raga, deps) {
   // a raga to hearing it under your own hands.
   actions.appendChild(deps.loadButton(raga));
   wrap.appendChild(actions);
+
+  const tempo = tempoControl(deps);
+  if (tempo) wrap.appendChild(tempo);
+  return wrap;
+}
+
+// Speed for every Play on this page, directly under the one you are most
+// likely to press - and the same control the finder shows beside each of its
+// three Loop toggles. Radio pills in the shape the Controls panel uses for
+// Theme and Layout, so a choice-of-several looks the same wherever it appears.
+//
+// No listener here. Every copy of this control is a view of one number, so
+// app.js hears them all through a single delegated handler on data-tempo and
+// writes the answer back to all of them; this only has to render the value as
+// it stands when the page is built.
+//
+// The name attribute is unique per render: a raga page is rebuilt on every
+// route change, and two live radio groups sharing a name would let a stale one
+// steal the checked state from the visible one.
+let tempoGroupSeq = 0;
+
+function tempoControl(deps) {
+  if (!deps.tempo) return null;
+  const wrap = el("fieldset", "tempo-pills raga-tempo");
+  wrap.appendChild(el("legend", null, "Tempo"));
+  const groupName = `raga-tempo-${++tempoGroupSeq}`;
+
+  for (const rate of deps.tempo.choices) {
+    const label = el("label");
+    const input = el("input");
+    input.type = "radio";
+    input.name = groupName;
+    // The same hook the finder's three copies carry, so one change handler
+    // and one sync pass cover every tempo control on the page.
+    input.dataset.tempo = String(rate);
+    input.checked = rate === deps.tempo.get();
+    label.appendChild(input);
+    label.append(`${rate}x`);
+    wrap.appendChild(label);
+  }
   return wrap;
 }
 
@@ -547,43 +634,15 @@ function detailsBlock(raga, deps) {
   return wrap;
 }
 
-// --- The authoring toggle -------------------------------------------------
-
-// Off by default, and off is what the family sees: empty headings on nine
-// hundred pages would put the project's own to-do list in front of every
-// reader. On, it names what this raga has no data for - which is the reminder
-// spec 06 asked for, kept where the work would be done rather than where the
-// reading is.
-const AUTHORING_FIELDS = [
-  ["Classification: jati", (r) => Boolean(r.jati)],
-  ["Anya swaras", (r) => Boolean(r.anya_swaras?.length)],
-  ["Same scale as", (r) => Boolean(r.same_scale_as?.length)],
-  ["Aliases", (r) => Boolean(r.aliases?.length)],
-  ["Hindustani equivalent", (r) => Boolean(r.hindustani_equivalent)],
-  ["Composed by", (r) => Boolean(r.composer)],
-];
-
-function unsourcedBlock(raga, deps) {
-  if (!deps.authoringMode()) return null;
-  const notes = deps.detailsFor(raga.id) || {};
-  const missing = [
-    ...AUTHORING_FIELDS.filter(([, has]) => !has(raga)).map(([label]) => label),
-    ...DETAIL_SECTIONS.filter(([key]) => !notes[key]?.length).map(([, label]) => label),
-    "Carnatic compositions",
-    "Tamil film songs",
-  ];
-  if (!missing.length) return null;
-
-  const wrap = section("Not yet sourced");
-  wrap.appendChild(el("p", "raga-note",
-    "Shown because authoring mode is on. These fields have no data for this "
-    + "raga — for time of day on most Carnatic ragas, empty is the fact rather "
-    + "than a gap."));
-  const list = el("ul", "raga-links raga-unsourced");
-  for (const label of missing) list.appendChild(el("li", null, label));
-  wrap.appendChild(list);
-  return wrap;
-}
+// A "Not yet sourced" block used to sit here, listing every field this raga had
+// no data for, behind an authoring toggle on the Raga Reference page. Both were
+// removed 2026-08-15.
+//
+// Every block on this page already returns null when it has nothing to say, so
+// a page free of empty headings is the ordinary behaviour rather than a mode.
+// The block did the reverse - it put the project's to-do list in front of a
+// reader - and what is still missing is tracked in PROGRESS.md and in
+// data/raga_details.json, which is where the work happens.
 
 // --- 16. Provenance -------------------------------------------------------
 
@@ -643,9 +702,10 @@ function provenanceBlock(raga, deps) {
 
 // --- 4. Melakarta / janya -------------------------------------------------
 
-// The parent mela as a link, for the ~900 janyas. The header line above
-// already names it in prose; this makes it somewhere you can go, which is the
-// first thing the route buys that no result row ever could.
+// The parent mela as a link, for the ~900 janyas. The chip line at the top of
+// the page now links it too, so this is the second route to the same place -
+// kept because this one sits inside the Melakarta/janya section, where a reader
+// following the classification finds it without going back up to the header.
 function parentLink(raga, deps) {
   const parent = deps.melakartaFor(raga.mela);
   if (!parent || parent.id === raga.id) return null;
@@ -748,7 +808,6 @@ export function renderRagaPage(root, raga, deps) {
     hindustaniBlock,
     detailsBlock,
     provenanceBlock,
-    unsourcedBlock,
     janyaBlock,
   ]) {
     const block = build(raga, deps);
