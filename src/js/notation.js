@@ -181,7 +181,15 @@ const NISHADA_STD_TOKEN_TO_ROLE = { N1: "shuddha", N2: "kaisiki", N3: "kakali" }
 // that carries the octave, per CLAUDE.md), so without this a raga's scale
 // line ended on a bare S while every widget showed the dotted one.
 export function noteLabel(note, prefs = {}) {
-  return applySthayi(renumberLabel(note.label, prefs), note.degree === 12 ? 1 : 0);
+  // `sthayi` when the note carries one, otherwise the bookend rule: degree 12
+  // *is* the octave above and has always drawn its own dot.
+  //
+  // Both, not either. Once app.js started sounding `sthayi` (2026-08-08) a
+  // mandra note played an octave down while still printing as a plain N3 - the
+  // eye and the ear disagreeing about the same note, which is worse than the
+  // old state where they were wrong together.
+  const sthayi = note.sthayi || (note.degree === 12 ? 1 : 0);
+  return applySthayi(renumberLabel(note.label, prefs), sthayi);
 }
 
 export function renumberLabel(label, prefs = {}) {
@@ -241,6 +249,26 @@ export function referenceRowCode(row, prefs = {}) {
 
 // The 13 distinct, independently selectable notes (low Sa through high Sa)
 // - use this to build a widget's keys/tiles.
+// A *selection* holds pitches, not degrees: semitones from Sa, so the mandra
+// nishada is -1, the madhya one is 11, and the upper Sa is 12. That is what
+// lets a run visit one swara in two octaves - Patdip's arohana opens on the
+// mandra N3 and reaches the madhya N3 later - which a set of degrees 0-12
+// cannot express, because both fold to the same number.
+//
+// These two functions are the only place that folding happens. `degreeOf` maps
+// a pitch back into the 0-12 window every widget and every stored raga uses;
+// `sthayiOf` says which octave it came from. Degrees 0 and 12 are distinct
+// selectable notes, so 12 stays 12 rather than folding to 0.
+export function degreeOf(pitch) {
+  if (pitch >= 0 && pitch <= 12) return pitch;
+  return ((pitch % 12) + 12) % 12;
+}
+
+export function sthayiOf(pitch) {
+  if (pitch >= 0 && pitch <= 12) return 0;
+  return pitch < 0 ? -1 : 1;
+}
+
 export const DEGREES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
 
 // Shared by every input style's key/tile: compound labels (e.g. "R2/G1")
@@ -385,9 +413,13 @@ export function renderSelectionBox(container, props) {
 
   const tray = document.createElement("div");
   tray.className = "tile-row tray";
+  // The tray draws selection values, which are pitches - so a tile carries the
+  // octave mark of the key that was actually pressed. Sorting is by pitch, so
+  // a mandra note sorts below Sa where it belongs rather than being filed
+  // under its pitch class in the middle of the run.
   const entries = order
-    ? list.map((degree, i) => ({ degree, position: i + 1 }))
-    : [...list].sort((a, b) => (descending ? b - a : a - b)).map((degree) => ({ degree, position: null }));
+    ? list.map((pitch, i) => ({ pitch, position: i + 1 }))
+    : [...list].sort((a, b) => (descending ? b - a : a - b)).map((pitch) => ({ pitch, position: null }));
 
   // One gap before every tile and one after the last, so the caret can sit at
   // any of the list.length + 1 insertion points.
@@ -403,7 +435,8 @@ export function renderSelectionBox(container, props) {
     tray.appendChild(gap);
   };
 
-  entries.forEach(({ degree, position }, index) => {
+  entries.forEach(({ pitch, position }, index) => {
+    const degree = degreeOf(pitch);
     addGap(index);
 
     const tile = document.createElement("button");
@@ -415,7 +448,7 @@ export function renderSelectionBox(container, props) {
     tile.className = "key tile swara-chip selected";
     tile.dataset.index = String(index);
     applySwaraColors(tile, degree);
-    tile.innerHTML = keyLabelHtml(degree, labelPrefs);
+    tile.innerHTML = keyLabelHtml(degree, labelPrefs, sthayiOf(pitch));
 
     if (position) {
       // Order mode: this tile IS one specific recorded occurrence, so a tap
@@ -426,7 +459,7 @@ export function renderSelectionBox(container, props) {
       // rather than a drag.
       if (!editable) tile.addEventListener("click", () => onRemoveOrder(position));
     } else {
-      tile.addEventListener("click", () => onRemove(degree));
+      tile.addEventListener("click", () => onRemove(pitch));
     }
     tray.appendChild(tile);
   });

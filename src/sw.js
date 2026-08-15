@@ -10,7 +10,7 @@
 // out of. Network-first means anyone with connectivity always gets
 // current content; the cache exists purely for when they don't have any.
 
-const CACHE_NAME = "raga-finder-v8"; // bump whenever the precache list below changes
+const CACHE_NAME = "raga-finder-v11"; // bump whenever the precache list below changes
 
 const PRECACHE_URLS = [
   "./index.html",
@@ -22,6 +22,9 @@ const PRECACHE_URLS = [
   "./js/notation.js",
   "./js/melakarta.js",
   "./js/mela-chart.js",
+  // The raga detail page (specs/06). Its route is a hash, so it adds no URL
+  // for the fetch handler to worry about - just this one module.
+  "./js/raga-page.js",
   // One entry per input style. cache.addAll() is all-or-nothing - a single
   // 404 rejects the whole install and leaves the app with no offline copy
   // at all - so this list has to track src/js/inputs/ exactly. It listed
@@ -44,6 +47,10 @@ const PRECACHE_URLS = [
   // got silently disabled once before, by a stale assembler.js entry.
   "../data/melakarta_chakras.json",
   "../data/katapayadi.json",
+  // The gathered notes (spec 06 Phase 4). Empty today, precached anyway: it is
+  // fetched on every load, and an offline miss would log a failure for a file
+  // that is meant to be there.
+  "../data/raga_details.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   // Not decoration: this one is the search button's entire glyph, painted as a

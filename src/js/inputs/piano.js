@@ -22,7 +22,6 @@ import {
   noteNameAt,
   noteNameWithOctaveAt,
 } from "../notation.js";
-import { playPianoTone } from "../audio.js";
 
 // Both ends land on a white key: a black key is drawn straddling the
 // boundary *after* the white one below it, so ending on a black key would
@@ -107,12 +106,21 @@ function originalLabel(degreeFromKey, labelPrefs) {
 // Low Sa (degree 0) and high Sa (degree 12) are independent keys/degrees -
 // no shared state between them.
 //
-// A key's *degree* is `semitone - saOffset`: only 0..12 are real, selectable
-// degrees, and that twelve-semitone window sits wherever Sa currently is. Keys
-// outside it still carry the right swara name for their pitch (an octave up or
-// down), but are shown dimmed and can't be selected - the selection model has
-// no room for them. At Key G4 that leaves most of the lower keyboard dimmed,
-// which is honest: those notes really are below the scale being built.
+// A key's *degree* is `semitone - saOffset`, and that twelve-semitone window
+// sits wherever Sa currently is. Keys outside it carry the right swara name for
+// their pitch, an octave up or down, with the traditional dot saying which.
+//
+// They used to be dimmed and unselectable. That went on 2026-08-08: once a
+// stored raga could legitimately step below Sa or above the upper Sa, a
+// keyboard that refused those keys could not enter the scale it was showing.
+// Every key is live and drawn like any other, and **every key selects itself** -
+// a selection holds pitches, so the mandra N3 and the madhya N3 are two
+// different values and both can be chosen at once. That is what makes Patdip's
+// arohana enterable; see specs/02.
+//
+// What replaces the fence is a landmark, not nothing: the chosen key's S and Ṡ
+// keep the note-name flag at their head, so the octave boundary stays legible
+// as a place to count from rather than as a wall.
 //
 // `keyOffset` is the Key setting on its own, and is only needed to tell the
 // two kinds of movement apart - the reference strip reports what gṛha bhēdam
@@ -123,7 +131,7 @@ function originalLabel(degreeFromKey, labelPrefs) {
 // addOrToggle handles that, and playPianoTone is happy with any integer
 // semitone, negative or past 12).
 export function render(container, props) {
-  const { selected, onToggle, labelPrefs, order, saOffset = 0, keyOffset = 0, freePlay = false } = props;
+  const { pitches, onToggle, labelPrefs, order, saOffset = 0, keyOffset = 0, freePlay = false } = props;
   container.className = "piano-style";
   container.innerHTML = "";
 
@@ -173,15 +181,19 @@ export function render(container, props) {
   const buildKey = (semitone, className, noteCentrePct = 50) => {
     const degree = semitone - saOffset;
     const inWindow = degree >= 0 && degree <= 12;
-    const isSelected = !freePlay && inWindow && selected.has(degree);
+    // `degree` here *is* the pitch the key stands for, so a key is lit exactly
+    // when its own pitch is in the selection. One press lights one key, and two
+    // keys of one swara light only if both were pressed - which is how S and Ṡ
+    // have always behaved, and now how every swara does.
+    const isSelected = !freePlay && Boolean(pitches?.has(degree));
 
     const key = document.createElement("button");
     key.type = "button";
     key.className =
       className +
       (isSelected ? " selected" : "") +
-      (!freePlay && !inWindow ? " out-of-range" : "") +
-      (degree === 0 ? " is-tonic" : "");
+      (degree === 0 ? " is-tonic" : "") +
+      (degree === 12 ? " is-octave" : "");
     key.title = noteNameWithOctaveAt(semitone);
     // Degree 12 already carries its own tara dot (it *is* the octave above).
     // Keys outside the window belong to a neighbouring octave and say so the
@@ -204,7 +216,7 @@ export function render(container, props) {
     // Lifted out of the key's flex column by .piano .key-note and pinned to the
     // key's head: it is deliberately nowhere near the swara label at the foot of
     // the key, and deliberately doesn't look like one.
-    if (degree === 0) {
+    if (degree === 0 || degree === 12) {
       const note = document.createElement("span");
       note.className = "key-note";
       note.style.left = `${noteCentrePct}%`;
@@ -223,18 +235,11 @@ export function render(container, props) {
 
     key.addEventListener("click", (e) => {
       e.stopPropagation(); // a black key sits on top of two white ones
-      // Out-of-window keys are unavailable for *selection* only - there's no
-      // degree 0-12 for them to be - but they're still notes, so they still
-      // sound. The keyboard was widened to be played on, and a key that
-      // stays silent when pressed reads as broken rather than as reserved.
-      //
-      // `semitone`, not `degree`: a key sounds its own pitch, which is what
-      // makes the keyboard honest - the scale has slid to a new place on a
-      // keyboard that never moved. Selectable keys reach the same answer
-      // through app.js's soundingDegree, which adds this same offset back on.
-      // Both are semitones from middle C, which is what audio.js wants.
-      if (freePlay || inWindow) onToggle(degree);
-      else playPianoTone(semitone);
+      // Every key selects, and it selects *itself*: the raw degree goes through
+      // as the pitch, out-of-window or not. app.js folds to a pitch class only
+      // when it hands the selection to matching and to the other two input
+      // styles, so the keyboard never has to lie about which key was pressed.
+      onToggle(degree);
     });
     return key;
   };

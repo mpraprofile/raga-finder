@@ -9,14 +9,20 @@ import {
   grahaTonic,
   rotateToTonic,
   searchByName,
+  searchKey,
   buildNameIndex,
   isExactNameMatch,
   relatedByMela,
+  formPitchSet,
+  directionPitchSet,
+  directionNoteSet,
+  ragaForms,
 } from "./ragas.js";
 import { playPianoTone, setMuted } from "./audio.js";
-import { REFERENCE_ROWS, referenceRowCode, noteLabel } from "./notation.js";
+import { REFERENCE_ROWS, referenceRowCode, noteLabel, degreeOf } from "./notation.js";
 import { checkAgainstStored } from "./melakarta.js";
 import { mountMelaChart, renderKatapayadiReference } from "./mela-chart.js";
+import { ragaHref, renderRagaPage, renderRagaNotFound, renderRagaLoading } from "./raga-page.js";
 import * as piano from "./inputs/piano.js";
 import * as buttons from "./inputs/buttons.js";
 import * as wheel from "./inputs/wheel.js";
@@ -74,6 +80,9 @@ let keySemitone = 0;
 let muted = false;
 let ragas = [];
 let melaNames = new Map(); // mela number -> that melakarta's name, filled after load
+// mela number -> the melakarta raga itself, so a janya's row can link to its
+// parent's page. Names alone are not enough: a href needs the parent's id.
+let melaRagas = new Map();
 // Folded name forms for the search view, built once after load - see
 // buildNameIndex() in ragas.js.
 let nameIndex = [];
@@ -139,8 +148,10 @@ const searchBackBtn = document.getElementById("search-back-btn");
 const ragaSearchInput = document.getElementById("raga-search-input");
 const suggestToggleBtn = document.getElementById("raga-suggest-toggle");
 const suggestListEl = document.getElementById("raga-suggestions");
-const searchPromptEl = document.getElementById("search-prompt");
 const searchResultsEl = document.getElementById("search-results");
+const ragaView = document.getElementById("raga-view");
+const ragaDetailEl = document.getElementById("raga-detail");
+const ragaBackBtn = document.getElementById("raga-back-btn");
 
 function toggleInList(list, degree) {
   const idx = list.indexOf(degree);
@@ -354,6 +365,19 @@ function saOffsetForList(list) {
 // centre summary is the deliberate exception among "found raga" players - it
 // names the selection sitting under it, so it follows the shift like the
 // selection does. See ragaSequenceAtTonic.
+// The selection holds pitches (notation.js: degreeOf/sthayiOf). Everything
+// downstream of it wants pitch classes 0-12 - the matcher compares against a
+// raga's stored degrees, and Buttons and the swara wheel draw exactly thirteen
+// things. So the fold happens here, at the boundary, and nowhere else.
+//
+// This is what keeps those two input styles sthayi-agnostic (specs/02) without
+// their code knowing anything about it: they are handed a folded Set and carry
+// on as they always did. The Piano gets the unfolded pitches, because it is the
+// one style with a key per register.
+function foldedSet(list) {
+  return new Set(list.map(degreeOf));
+}
+
 function soundingDegree(list, degree) {
   return degree + saOffsetForList(list);
 }
@@ -478,7 +502,8 @@ function renderInputs() {
 
   if (layoutMode === "combined" || inFreePlayMode()) {
     renderer.render(combinedContainer, {
-      selected: new Set(combined),
+      selected: foldedSet(combined),
+      pitches: new Set(combined),
       list: combined,
       labelPrefs,
       order: orderMapFor(combined),
@@ -526,7 +551,8 @@ function renderInputs() {
     });
   } else {
     renderer.render(arohanaContainer, {
-      selected: new Set(arohanaSel),
+      selected: foldedSet(arohanaSel),
+      pitches: new Set(arohanaSel),
       list: arohanaSel,
       labelPrefs,
       order: orderMapFor(arohanaSel),
@@ -568,7 +594,8 @@ function renderInputs() {
       },
     });
     renderer.render(avarohanaContainer, {
-      selected: new Set(avarohanaSel),
+      selected: foldedSet(avarohanaSel),
+      pitches: new Set(avarohanaSel),
       list: avarohanaSel,
       labelPrefs,
       order: orderMapFor(avarohanaSel),
@@ -621,11 +648,130 @@ function hasSelection() {
 // the four (order mode x layout mode) shapes it currently has. Shared by
 // the results list and by the wheel's centre summary, so the two can't
 // drift into disagreeing about what's matching right now.
+// A raga whose scale is written at the very registers that were played ranks
+// above one that merely uses the same swaras.
+//
+// The default reading of a selection is its swaras: two keys of one swara are
+// one swara, so Patdip's arohana finds Patdip whether or not the octaves were
+// entered. But when the pitches *as pressed* are exactly some raga's own
+// pitches, that is a stronger claim than "these notes appear in it", and it
+// goes to the top. Nothing is filtered out - only reordered - so entering the
+// octaves can never lose a result that leaving them out would have found.
+//
+// Direction matters here and it is easy to get wrong: the comparison has to be
+// against whatever the *matcher* compared against. In separate mode that is
+// each direction on its own, so an arohana entered alone is tested against the
+// raga's arohana. Testing it against arohana-and-avarohana together, as the
+// first version did, could never match - the sets are different sizes - and the
+// promotion silently never fired.
+function pitchSetsEqual(a, b) {
+  if (a.size !== b.size) return false;
+  for (const value of a) if (!b.has(value)) return false;
+  return true;
+}
+
+function playedAtSameRegisters(entry) {
+  const combinedMode = layoutMode === "combined";
+  const played = new Set(combinedMode ? combined : []);
+  const aro = new Set(arohanaSel);
+  const ava = new Set(avarohanaSel);
+  if (combinedMode ? played.size === 0 : aro.size === 0 && ava.size === 0) return false;
+
+  for (const form of ragaForms(entry)) {
+    if (combinedMode) {
+      if (pitchSetsEqual(formPitchSet(form), played)) return true;
+      continue;
+    }
+    const aroOk = aro.size === 0 || pitchSetsEqual(directionPitchSet(form.arohana), aro);
+    const avaOk = ava.size === 0 || pitchSetsEqual(directionPitchSet(form.avarohana), ava);
+    if (aroOk && avaOk) return true;
+  }
+  return false;
+}
+
+function promoteRegisterMatches(exact) {
+  if (exact.length < 2) return exact;
+  const hits = exact.filter(playedAtSameRegisters);
+  if (hits.length === 0 || hits.length === exact.length) return exact;
+  return [...hits, ...exact.filter((e) => !hits.includes(e))];
+}
+
+// Which single direction of a raga the selection exactly equals, if either.
+//
+// Combined layout matches a selection against a raga's *whole* scale, so
+// entering just an arohana could only ever be a subset of any raga whose
+// avarohana adds a swara - Patdip came back under "also contain" while ragas
+// whose entire scale was those six swaras came back exact. Entering a scale and
+// not finding the raga it belongs to is the one thing this view exists to do.
+//
+// A selection that is exactly some raga's arohana is an exact statement about
+// that arohana, so it belongs in the exact list - one rank below a raga whose
+// whole scale it matches, which is a stronger claim still.
+//
+// Never "both": if both directions equalled the selection then so would their
+// union, and the raga would already be a whole-scale exact match.
+function directionExactness(entry, pressed) {
+  for (const form of ragaForms(entry)) {
+    if (pitchSetsEqual(directionNoteSet(form.arohana), pressed)) return "arohana";
+    if (pitchSetsEqual(directionNoteSet(form.avarohana), pressed)) return "avarohana";
+  }
+  return null;
+}
+
+// Whole-scale exact first, then direction-exact, and inside each group the
+// ragas played at their own registers lead. Three ranks, most specific first.
+function withDirectionExact(found, pressed) {
+  const kinds = new Map();
+  const promoted = [];
+  const rest = [];
+  for (const entry of found.contains) {
+    const kind = directionExactness(entry, pressed);
+    if (kind) {
+      kinds.set(entry.id, kind);
+      promoted.push(entry);
+    } else {
+      rest.push(entry);
+    }
+  }
+  // Within the direction-exact group the register test has to look at that
+  // same direction. Comparing against the whole form never fires here - the
+  // other direction contributes pitches the selection was never going to have -
+  // so Patdip sat behind three all-madhya arohanas that matched it only as a
+  // swara set.
+  const played = new Set(combined);
+  const atRegisterInDirection = (entry) => {
+    const kind = kinds.get(entry.id);
+    for (const form of ragaForms(entry)) {
+      if (pitchSetsEqual(directionPitchSet(form[kind]), played)) return true;
+    }
+    return false;
+  };
+  const registerHits = promoted.filter(atRegisterInDirection);
+  const ordered = registerHits.length
+    ? [...registerHits, ...promoted.filter((e) => !registerHits.includes(e))]
+    : promoted;
+  return {
+    exact: [...promoteRegisterMatches(found.exact), ...ordered],
+    contains: rest,
+    exactKind: kinds,
+  };
+}
+
 function currentMatches() {
   if (orderMode) {
-    return layoutMode === "combined" ? matchOrdered(ragas, combined, "either") : matchOrderedSeparate(ragas, arohanaSel, avarohanaSel);
+    const ordered = layoutMode === "combined"
+      ? matchOrdered(ragas, combined.map(degreeOf), "either")
+      : matchOrderedSeparate(ragas, arohanaSel.map(degreeOf), avarohanaSel.map(degreeOf));
+    return { ...ordered, exact: promoteRegisterMatches(ordered.exact) };
   }
-  return layoutMode === "combined" ? match(ragas, new Set(combined)) : matchSeparate(ragas, new Set(arohanaSel), new Set(avarohanaSel));
+  if (layoutMode === "combined") {
+    const pressed = foldedSet(combined);
+    return withDirectionExact(match(ragas, pressed), pressed);
+  }
+  // Separate layout already asks each direction its own question, so a
+  // direction-exact hit there is just an exact hit.
+  const found = matchSeparate(ragas, foldedSet(arohanaSel), foldedSet(avarohanaSel));
+  return { ...found, exact: promoteRegisterMatches(found.exact) };
 }
 
 // What sits in the hole in the middle of the swara wheel: the name of the
@@ -652,7 +798,7 @@ function exactMatchSummary(exact, list) {
 // is precisely these swaras" - which is the question that wheel is asking.
 function directionMatches(list, direction) {
   if (list.length === 0 || ragas.length === 0) return [];
-  const pressed = new Set(list);
+  const pressed = foldedSet(list);
   const empty = new Set();
   const { exact } = direction === "arohana" ? matchSeparate(ragas, pressed, empty) : matchSeparate(ragas, empty, pressed);
   return exact;
@@ -677,7 +823,7 @@ function renderResults() {
   }
   promptEl.hidden = true;
 
-  const { exact, contains } = currentMatches();
+  const { exact, contains, exactKind } = currentMatches();
 
   if (exact.length === 0 && contains.length === 0) {
     resultsEl.appendChild(emptyRow("No ragas match this swara set."));
@@ -686,7 +832,11 @@ function renderResults() {
 
   const matched = currentMatchedSets();
   resultsEl.appendChild(countsRow(exact.length, contains.length));
-  for (const raga of exact) resultsEl.appendChild(renderRow(raga, { text: "exact", tier: "exact" }, matched));
+  for (const raga of exact) {
+    const kind = exactKind && exactKind.get(raga.id);
+    const badge = { text: kind ? `exact (${kind})` : "exact", tier: "exact" };
+    resultsEl.appendChild(renderRow(raga, badge, matched));
+  }
   for (const raga of contains) resultsEl.appendChild(renderRow(raga, null, matched));
 }
 
@@ -750,12 +900,16 @@ function orderBadge(raga, tier) {
 // each result's displayed scale. In combined mode one set applies to both
 // directions; in separate mode each direction highlights against its own
 // (possibly empty/unconstrained) selection only.
+// Folded, because this is compared against a raga's stored `degree` values.
+// Unfolded, the mandra nishada is -1 and never equals the 11 in Bhakthirasa's
+// scale, so pressing it left that swara unhighlighted in every result row - the
+// selection counted it but the page never said so.
 function currentMatchedSets() {
   if (layoutMode === "combined") {
-    const s = new Set(combined);
+    const s = foldedSet(combined);
     return { arohana: s, avarohana: s };
   }
-  return { arohana: new Set(arohanaSel), avarohana: new Set(avarohanaSel) };
+  return { arohana: foldedSet(arohanaSel), avarohana: foldedSet(avarohanaSel) };
 }
 
 function emptyRow(text) {
@@ -816,20 +970,55 @@ function renderRow(raga, badge, matched, tint = Boolean(badge && badge.tier === 
 
   const name = document.createElement("span");
   name.className = "raga-name";
-  name.textContent = raga.name;
-  // Every result list puts melakartas first (see byMelakartaThenName in
-  // ragas.js). The order alone doesn't say why, so each one says so.
-  if (raga.is_melakarta) {
-    const melaBadge = document.createElement("span");
-    melaBadge.className = "badge badge-mela";
-    melaBadge.textContent = "melakarta";
-    name.appendChild(melaBadge);
-  }
+  // The whole row opens the raga's page, but the thing that makes it do so is
+  // still one real <a href> on the name: CSS stretches that anchor's hit area
+  // over the entire card (see .raga-name-link::after). A click handler on the
+  // <li> would have been fewer lines and worse - no middle-click, no "copy
+  // link", nothing announced as a link, and the router would stop being the
+  // only thing that decides what a hash means. The row's own buttons sit above
+  // the stretched area and keep working.
+  const nameLink = document.createElement("a");
+  nameLink.className = "raga-name-link";
+  nameLink.href = ragaHref(raga);
+  nameLink.textContent = raga.name;
+  nameLink.setAttribute("aria-label", `${raga.name} - open its page`);
+  name.appendChild(nameLink);
+  // Tradition first, because it says what the raga *is* before the list says
+  // where it sorts. Both traditions are marked, not just the rare one: the
+  // names used to carry "{Hindustani}" and no longer do, so this chip is now
+  // the only thing separating the Carnatic Shankara from the Hindustani one,
+  // and a chip that appears only sometimes can't be read as "this row has been
+  // checked" - its absence would be ambiguous between Carnatic and unlabelled.
+  // The match verdict rides on the name's own line: it is a statement about
+  // *this search*, like the name is about this raga, and the descriptive chips
+  // below are about the raga whatever was searched for.
   if (badge) {
     const el = document.createElement("span");
     el.className = `badge badge-${badge.tier}`;
     el.textContent = badge.text;
     name.appendChild(el);
+  }
+
+  // Line 2: what the raga is. Kept off the name's line so a long name can never
+  // push a chip out of view, and so the chips read as one set rather than as a
+  // tail on the title.
+  const chips = document.createElement("div");
+  chips.className = "result-chips";
+  const isHindustani = raga.tradition === "hindustani";
+  const traditionBadge = document.createElement("span");
+  traditionBadge.className = `badge badge-tradition${isHindustani ? " hindustani" : ""}`;
+  traditionBadge.textContent = isHindustani ? "Hindustani" : "Carnatic";
+  chips.appendChild(traditionBadge);
+  // Every result list puts melakartas first (see byMelakartaThenName in
+  // ragas.js). The order alone doesn't say why, so each one says so.
+  if (raga.is_melakarta) {
+    const melaBadge = document.createElement("span");
+    melaBadge.className = "badge badge-mela";
+    // The number lives in the chip rather than on a line of its own. For a
+    // melakarta that line read "Melakarta #29" and nothing else, so the chip
+    // and the line were two copies of one fact.
+    melaBadge.textContent = `Melakarta #${raga.mela}`;
+    chips.appendChild(melaBadge);
   }
   // A raga can be listed with more than one scale, and the matchers search all
   // of them (see ragaForms in ragas.js). When an alternative is what matched,
@@ -842,22 +1031,85 @@ function renderRow(raga, badge, matched, tint = Boolean(badge && badge.tier === 
     el.textContent = "variant scale";
     el.title = "This raga is listed with more than one scale; the swaras you "
       + "played match this alternative rather than the one usually given.";
-    name.appendChild(el);
+    chips.appendChild(el);
   }
 
-  const mela = document.createElement("span");
-  mela.className = "mela-context";
-  mela.textContent = melaContext(raga, melaNames);
+  // A janya gets a chip too, so the line is chips either way - but the parent
+  // is a cross-reference to another raga, not a label from a closed set, and
+  // "of melakarta #29-Dhirasankarabharanam" is far too long to read inside a
+  // pill. So the chip carries the category and the reference trails it as a
+  // qualifier, set in the chip's own size and colour so the two read as one
+  // object. They are wrapped together in .result-janya, which is the single
+  // flex item here: the line can wrap around the pair but never between them,
+  // so the qualifier can never be orphaned from the chip it qualifies.
+  if (!raga.is_melakarta) {
+    const janya = document.createElement("span");
+    janya.className = "result-janya";
+    const janyaChip = document.createElement("span");
+    janyaChip.className = "badge badge-janya";
+    janyaChip.textContent = "Janya";
+    janya.appendChild(janyaChip);
 
-  const scales = document.createElement("div");
-  scales.className = "scales";
-  scales.innerHTML = `Arohana: ${scaleHtml(raga.arohana, matched.arohana)}  |  Avarohana: ${scaleHtml(raga.avarohana, matched.avarohana)}`;
+    const note = document.createElement("span");
+    note.className = "result-janya-note";
+    if (raga.mela == null) {
+      note.textContent = "parent melakarta unknown";
+    } else {
+      note.append("of melakarta ");
+      // U+2011 non-breaking hyphen, as melaContext uses: the number and the
+      // name are one identifier and must not break across lines (ragas.js).
+      const label = `#${raga.mela}${melaNames.has(raga.mela) ? `‑${melaNames.get(raga.mela)}` : ""}`;
+      const parent = melaRagas.get(raga.mela);
+      if (parent) {
+        const link = document.createElement("a");
+        link.className = "parent-mela-link";
+        link.href = ragaHref(parent);
+        link.textContent = label;
+        note.appendChild(link);
+      } else {
+        note.append(label);
+      }
+    }
+    janya.appendChild(note);
+    chips.appendChild(janya);
+  }
 
-  li.appendChild(playBtn);
-  li.appendChild(name);
-  li.appendChild(mela);
-  if (loadable) li.appendChild(loadButton(raga));
-  li.appendChild(scales);
+  // One line each, rather than "Arohana: ... | Avarohana: ..." sharing one.
+  // The two are read against each other constantly - which swara differs
+  // between them is most of what distinguishes one raga from its neighbours -
+  // and that comparison is far easier when they start at the same left edge
+  // than when the second begins wherever the first happened to end.
+  const scaleLine = (label, notes, marks) => {
+    const div = document.createElement("div");
+    div.className = "scales";
+    div.innerHTML = `${label}: ${scaleHtml(notes, marks)}`;
+    return div;
+  };
+
+  // The name line is a flex row so Load swaras can take the empty right end of
+  // it - a name leaves most of that line unused, and the button had been
+  // costing a whole line of its own underneath. Pushed right rather than set
+  // beside the name: hard against the row's right edge it reads as the row's
+  // action, where inline after the name it read as another chip in the stack.
+  // The li stays the positioned ancestor, so the name link's stretched hit area
+  // still covers the whole card and the button still sits above it.
+  const head = document.createElement("div");
+  head.className = "result-head";
+  head.appendChild(playBtn);
+  head.appendChild(name);
+  if (loadable) head.appendChild(loadButton(raga));
+
+  li.appendChild(head);
+  li.appendChild(chips);
+  li.appendChild(scaleLine("Arohana", raga.arohana, matched.arohana));
+  li.appendChild(scaleLine("Avarohana", raga.avarohana, matched.avarohana));
+  // The cue that the card goes somewhere. Same idea as the disclosure triangle
+  // beside "Controls", pointing right instead of down, and aria-hidden because
+  // it says nothing the name's own link does not already say.
+  const go = document.createElement("span");
+  go.className = "result-row-go";
+  go.setAttribute("aria-hidden", "true");
+  li.appendChild(go);
   return li;
 }
 
@@ -896,11 +1148,9 @@ function performRagaSearch() {
   searchResultsEl.innerHTML = "";
 
   const query = ragaSearchInput.value;
-  if (!query.trim()) {
-    searchPromptEl.hidden = false;
-    return;
-  }
-  searchPromptEl.hidden = true;
+  // An empty query leaves an empty list, and nothing else: the input's
+  // placeholder is the only instruction this view needs.
+  if (!query.trim()) return;
 
   const matches = matchesFor(query);
   if (matches.length === 0) {
@@ -990,11 +1240,11 @@ function loadRagaIntoKeyboard(raga) {
   updateLayoutVisibility();
   renderInputs();
   renderResults();
-  // Whichever view the button was in - the name search's results or the
-  // chakra chart's detail panel - the answer now lives on the main page, and
-  // showView() scrolls to the top of it (both of those lists are long, and
-  // the loaded scale is at the top of the page it just swapped to).
-  showView("main");
+  // Whichever view the button was in - the name search's results, the chakra
+  // chart's detail panel, or the raga's own page - the answer now lives on the
+  // main page, and the route change scrolls to the top of it (those lists are
+  // long, and the loaded scale is at the top of the page it just swapped to).
+  navigate("");
 }
 
 function loadButton(raga) {
@@ -1026,26 +1276,71 @@ let allNameItems = [];
 let suggestionItems = []; // what's listed right now, in listed order
 let activeSuggestion = -1; // keyboard cursor into it; -1 = nothing highlighted
 
+// Suggestions are de-duplicated by name *and tradition*, not by name alone.
+// Collapsing on the name put the Carnatic and the Hindustani Shankara on one
+// row wearing both chips, which reads as a single raga that is somehow both
+// traditions at once. They are two different ragas and get two rows.
+//
+// Two ragas sharing a name *and* a tradition still share one row - Gara is a
+// janya of mela 22 and of mela 28, and nothing a suggestion can show would
+// tell those apart. The results list below is what disambiguates them, which
+// is the same division of labour as before.
+// Tradition first, so the separator cannot be ambiguous: `tradition` is one of
+// two known words containing no "|", which a name would have to contain for two
+// different pairs to collide. (The first version separated with a literal NUL
+// on the same reasoning - it worked, but it made the whole file read as binary
+// to grep and to diff tools, for a guarantee that ordering gives for free.)
+function suggestionKey(raga) {
+  return `${raga.tradition}|${raga.name}`;
+}
+
+// Only a melakarta carries a number here, and it is unambiguous: all 72
+// melakarta names are unique, and no name is shared by a melakarta and a janya,
+// so a row showing a mela number is always showing exactly one raga's.
+function mergeIntoItem(item, raga) {
+  if (raga.is_melakarta) item.melaNumber = raga.mela;
+  return item;
+}
+
+function itemFor(raga) {
+  return mergeIntoItem({
+    name: raga.name,
+    tradition: raga.tradition === "hindustani" ? "Hindustani" : "Carnatic",
+    melaNumber: null,
+  }, raga);
+}
+
 function buildNameList() {
-  const byName = new Map();
+  const byKey = new Map();
   for (const raga of ragas) {
-    const seen = byName.get(raga.name);
-    if (seen) seen.isMelakarta = seen.isMelakarta || Boolean(raga.is_melakarta);
-    else byName.set(raga.name, { name: raga.name, isMelakarta: Boolean(raga.is_melakarta) });
+    const seen = byKey.get(suggestionKey(raga));
+    if (seen) mergeIntoItem(seen, raga);
+    else byKey.set(suggestionKey(raga), itemFor(raga));
   }
-  allNameItems = [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+  // Carnatic before Hindustani where a name has both, which is the order the
+  // results list puts them in too (see byMelakartaThenName in ragas.js).
+  allNameItems = [...byKey.values()].sort((a, b) =>
+    a.name.localeCompare(b.name) || a.tradition.localeCompare(b.tradition));
 }
 
 function suggestionsForQuery() {
   const query = ragaSearchInput.value;
   if (!query.trim()) return [];
   const items = [];
-  const seen = new Set();
+  const byKey = new Map();
   for (const raga of matchesFor(query)) {
-    if (seen.has(raga.name)) continue;
-    seen.add(raga.name);
-    items.push({ name: raga.name, isMelakarta: Boolean(raga.is_melakarta) });
-    if (items.length === SUGGESTION_LIMIT) break;
+    const key = suggestionKey(raga);
+    const seen = byKey.get(key);
+    // The limit caps how many rows are offered, so it gates new entries only.
+    // A later raga sharing an existing row still has to be merged in - it can
+    // be the melakarta of the pair, and a row that stopped at the first match
+    // would be missing its number.
+    if (seen) mergeIntoItem(seen, raga);
+    else if (items.length < SUGGESTION_LIMIT) {
+      const item = itemFor(raga);
+      byKey.set(key, item);
+      items.push(item);
+    }
   }
   return items;
 }
@@ -1081,12 +1376,37 @@ function renderSuggestions(items) {
     const name = document.createElement("span");
     name.textContent = item.name;
     li.appendChild(name);
-    if (item.isMelakarta) {
+    // The tags go in one wrapper so the row keeps exactly two flex children
+    // and `justify-content: space-between` still means "name left, tags
+    // right". It is also what wraps as a unit on a narrow phone, where a long
+    // name plus both tags is wider than the list.
+    const tags = document.createElement("span");
+    tags.className = "suggestion-tags";
+    // A melakarta row shows only its mela chip. Not one of the 72 is
+    // Hindustani, so "Carnatic" beside "Mela #29" states something the mela
+    // chip has already implied - and this is the one surface where the room is
+    // genuinely short: name plus both chips is 308.6px against the 278px a
+    // 320px phone gives the row, which wrapped every melakarta on a 360px
+    // screen. Dropping the chip that carries no information buys it back.
+    //
+    // "Mela #29" rather than "Melakarta #29" for the same reason. The result
+    // rows and the raga page have the room, so they say the whole word and
+    // badge both traditions.
+    const labels = item.melaNumber != null
+      ? [{ text: `Mela #${item.melaNumber}`, cls: "badge-mela" }]
+      : [{ text: item.tradition,
+           cls: `badge-tradition${item.tradition === "Hindustani" ? " hindustani" : ""}` }];
+    for (const { text, cls } of labels) {
       const tag = document.createElement("span");
-      tag.className = "suggestion-tag";
-      tag.textContent = "melakarta";
-      li.appendChild(tag);
+      // The same classes the result rows use, so a chip is one object with one
+      // look wherever it appears - .suggestion-tag only trims it for the
+      // tighter row. It used to draw bare uppercase text here, which read as a
+      // second column of labels rather than as the chips it matched below.
+      tag.className = `badge suggestion-tag ${cls}`;
+      tag.textContent = text;
+      tags.appendChild(tag);
     }
+    li.appendChild(tags);
     frag.appendChild(li);
   });
   suggestListEl.appendChild(frag);
@@ -1216,7 +1536,12 @@ document.addEventListener("pointerdown", (e) => {
 // does: two views' worth of Play buttons left running into each other would
 // be confusing, not useful. That applies to the reference view too now - it
 // stopped being the case that "you have not gone anywhere".
-const VIEWS = { main: () => mainView, search: () => searchView, settings: () => settingsView };
+const VIEWS = {
+  main: () => mainView,
+  search: () => searchView,
+  settings: () => settingsView,
+  raga: () => ragaView,
+};
 
 function showView(name) {
   stopAllPlayback();
@@ -1233,22 +1558,175 @@ function showView(name) {
   else window.scrollTo({ top: 0 });
 }
 
-function openSearchView() {
-  showView("search");
+// Everything the detail page needs from the app, in one place. raga-page.js
+// owns layout and nothing else: the sound, the Key, the numbering preference
+// and the selection are one app-wide thing each, and a second module holding
+// its own opinion about any of them is how two surfaces start disagreeing.
+const ragaPageDeps = {
+  labelPrefs,
+  melaContext,
+  get melaNames() {
+    return melaNames;
+  },
+  melakartaFor: (mela) => ragas.find((r) => r.is_melakarta && r.mela === mela) || null,
+  ragaById: (id) => ragas.find((r) => r.id === id) || null,
+  // The gathered notes (spec 06 Phase 4). Optional at runtime like the two
+  // scraped reference files: a missing or unreadable raga_details.json leaves
+  // sections 10-13 unrendered and changes nothing else, which is the same
+  // state the file is in today anyway - empty.
+  detailsFor: (id) => ragaDetails?.ragas?.[id] || null,
+  citation: (cite) => ragaDetails?.citations?.[cite] || null,
+  authoringMode: () => authoringMode,
+  // Every janya naming this melakarta as parent, alphabetically. Not
+  // byMelakartaThenName: that sort exists to float the answer a *search* is
+  // reaching for to the top, and this is a directory of siblings where nothing
+  // outranks anything and a reader is looking for one name they already know.
+  janyasOf: (mela) => ragas
+    .filter((r) => !r.is_melakarta && r.mela === mela)
+    .sort((a, b) => a.name.localeCompare(b.name)),
+  // For `hindustani_equivalent`, which stores a name rather than an id - the
+  // source gives a name and spec 01 says so. Matched loosely because the two
+  // surfaces spell it differently ("Bhupali" against "Bhoopali {Hindustani}"),
+  // and only ever to decide whether the name can be a link: a miss leaves it
+  // as plain text, never as a link to the wrong raga.
+  ragaByName: (name, tradition) => {
+    const key = searchKey(name);
+    return ragas.find((r) => r.tradition === tradition && searchKey(r.name) === key) || null;
+  },
+  getChakras: () => chakras,
+  getKatapayadi: () => katapayadi,
+  loadButton,
+  // The page's three Play buttons join the same single-player-at-a-time
+  // registry the result rows use, so a row preview and a detail page cannot
+  // sound over each other - they are one app, and this page is reached from
+  // those very rows.
+  attachPlayer(buttonEl, buildSequence) {
+    const player = makePlayer({
+      buildSequence,
+      buttonEls: buttonEl,
+      getLoop: () => false,
+      onStart: () => {
+        stopScalePreview();
+        if (activeRowPlayer && activeRowPlayer !== player) activeRowPlayer.stop();
+        activeRowPlayer = player;
+        combinedPlayer.stop();
+        stopAllSeparatePlayers();
+      },
+      renderState: setResultPlayButtonState,
+    });
+    return player;
+  },
+  // One direction, or both with the turnaround pause the rest of the app uses.
+  // Always from the raga's own Sa with only the Key applied - never a gṛha
+  // bhēdam offset, exactly as ragaSequenceInKey explains for the result rows.
+  scaleSequence(raga, which) {
+    if (which === "both") return ragaSequenceInKey(raga);
+    return ragaPageDeps.notesSequence(raga[which]);
+  },
+  // An arbitrary run of notes - what the variants block plays, since a variant
+  // is one direction of a scale that is not the raga's stored one.
+  notesSequence(notes) {
+    return { sequence: notes.map((n) => notePitch(n) + keySemitone), pauseAfterIndex: -1 };
+  },
+};
+
+// --- Routing -------------------------------------------------------------
+// The hash is the single owner of which view is visible, and showView() above
+// became its implementation rather than its entry point. Every button that
+// used to call showView() now sets the hash instead, so "which view are we
+// on" has exactly one answer and the browser's own Back button is part of the
+// app rather than a way out of it.
+//
+// Hash, not real paths: sw.js is network-first over an explicit precache list,
+// and a real /raga/mohanam would need a server rewrite this project does not
+// have (GitHub Pages, scripts/dev_server.py) plus a navigation fallback in the
+// service worker, with every raga a cache entry. A hash never reaches the
+// network at all. See specs/06-raga-detail-page.md.
+const STATIC_ROUTES = { "": "main", "#": "main", "#search": "search", "#reference": "settings" };
+const RAGA_ROUTE = /^#raga\/(.+)$/;
+const BASE_TITLE = document.title;
+
+function navigate(hash) {
+  if (location.hash === hash || (hash === "" && location.hash === "#")) {
+    applyRoute(); // same hash, no hashchange event - but the view still has to be shown
+    return;
+  }
+  location.hash = hash;
 }
 
-function closeSearchView() {
-  showView("main");
+// True once ragas.json has arrived. A raga route that lands before that is not
+// a missing raga, it is a page that cannot answer yet - see renderRagaLoading.
+let dataReady = false;
+
+function applyRoute() {
+  const hash = location.hash;
+  const ragaMatch = RAGA_ROUTE.exec(hash);
+  if (ragaMatch) {
+    showRagaRoute(decodeURIComponent(ragaMatch[1]));
+    return;
+  }
+  document.title = BASE_TITLE;
+  showView(STATIC_ROUTES[hash] ?? "main");
 }
 
-searchOpenBtn.addEventListener("click", openSearchView);
-searchBackBtn.addEventListener("click", () => showView("main"));
+// The raga's name goes in the document title, not in the view's own header
+// bar. The bar keeps the fixed label the other two views use, so the name is
+// printed once - and the title is where it earns its keep anyway: it is what a
+// bookmark of #raga/mohanam is filed under and what a shared link shows before
+// anyone opens it.
+function showRagaRoute(id) {
+  showView("raga");
+  if (!dataReady) {
+    renderRagaLoading(ragaDetailEl);
+    return;
+  }
+  const raga = ragas.find((r) => r.id === id);
+  if (!raga) {
+    document.title = `Unknown raga · ${BASE_TITLE}`;
+    renderRagaNotFound(ragaDetailEl, id);
+    return;
+  }
+  document.title = `${raga.name} · ${BASE_TITLE}`;
+  renderRagaPage(ragaDetailEl, raga, ragaPageDeps);
+}
 
-settingsOpenBtn.addEventListener("click", () => showView("settings"));
-settingsBackBtn.addEventListener("click", () => showView("main"));
+// Re-render the open raga page in place. Called when the numbering preference
+// or the Key changes, for the same reason every other list is: a scale on
+// screen must not be left reading in a convention the user has just changed
+// away from.
+function refreshRagaPage() {
+  if (ragaView.hidden) return;
+  applyRoute();
+}
+
+window.addEventListener("hashchange", applyRoute);
+
+searchOpenBtn.addEventListener("click", () => navigate("#search"));
+searchBackBtn.addEventListener("click", () => navigate(""));
+
+settingsOpenBtn.addEventListener("click", () => navigate("#reference"));
+settingsBackBtn.addEventListener("click", () => navigate(""));
+
+// Back out of a raga page the way the reader came in. history.back() is right
+// for the ordinary case - you followed a link from a result list and want that
+// list, scrolled where you left it. It is wrong for the case this route exists
+// to serve: a shared link opened cold, where there is nothing behind this page
+// and Back would leave the app. `enteredFrom` records whether the app has
+// navigated at least once in this session.
+let enteredFrom = null;
+
+ragaBackBtn.addEventListener("click", () => {
+  if (enteredFrom !== null) history.back();
+  else navigate("");
+});
+
+window.addEventListener("hashchange", () => {
+  enteredFrom = location.hash;
+});
 
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !settingsView.hidden) showView("main");
+  if (e.key !== "Escape") return;
+  if (!settingsView.hidden || !ragaView.hidden) navigate("");
 });
 
 // --- Play / loop -----------------------------------------------------
@@ -1518,9 +1996,23 @@ function stopScalePreview() {
 // turnaround index the pause is taken from (see buildCombinedSequence).
 // `saOffset` is where the raga's own degree 0 is put, in semitones from
 // middle C - the one thing the two callers below disagree about.
+// The one place a *stored* note becomes a pitch, the way audio.js's
+// frequencyAt is the one place a pitch becomes a frequency.
+//
+// `degree` is 0-12 by design (CLAUDE.md), so a note outside the madhya octave
+// carries its octave in `sthayi` instead - see scripts/sthayi.py. Until
+// 2026-08-08 nothing here read it, so Punnagavarali's opening mandra nishada
+// was correct in the data and still sounded a major seventh *above* Sa: the
+// scale opened with a leap down where it should step up. An absent `sthayi`
+// means the ordinary octave, which is why this reads as `|| 0` rather than
+// requiring the field.
+function notePitch(note) {
+  return note.degree + 12 * (note.sthayi || 0);
+}
+
 function ragaSequenceAt(raga, saOffset) {
-  const arohanaDegrees = raga.arohana.map((n) => n.degree + saOffset);
-  const avarohanaDegrees = raga.avarohana.map((n) => n.degree + saOffset);
+  const arohanaDegrees = raga.arohana.map((n) => notePitch(n) + saOffset);
+  const avarohanaDegrees = raga.avarohana.map((n) => notePitch(n) + saOffset);
   return { sequence: [...arohanaDegrees, ...avarohanaDegrees], pauseAfterIndex: arohanaDegrees.length - 1 };
 }
 
@@ -1796,6 +2288,10 @@ function choiceControl(key, options) {
       // both follow the numbering choice like everything else - it just happens
       // to be the one page the control that changed it is also on.
       melaChart?.refresh();
+      // And the detail page, if one is open behind this: it shows two scales,
+      // and leaving them in the convention just switched away from is the same
+      // stale-list bug the name search has above.
+      refreshRagaPage();
     });
     label.appendChild(radio);
     label.append(` ${opt.text}`);
@@ -1812,6 +2308,7 @@ function choiceControl(key, options) {
 let melaChart = null;
 let chakras = null;
 let katapayadi = null;
+let ragaDetails = null;
 
 async function loadOptionalJson(url) {
   try {
@@ -1953,6 +2450,25 @@ function initLabelPrefs() {
   }
 }
 
+// Authoring mode: persisted like the other preferences, and for the same
+// reason - anyone who turns it on is mid-task and would not thank the app for
+// forgetting between reloads.
+const AUTHORING_STORAGE_KEY = "authoringMode";
+let authoringMode = false;
+
+function initAuthoringMode() {
+  const toggle = document.getElementById("authoring-toggle");
+  authoringMode = localStorage.getItem(AUTHORING_STORAGE_KEY) === "on";
+  toggle.checked = authoringMode;
+  toggle.addEventListener("change", () => {
+    authoringMode = toggle.checked;
+    localStorage.setItem(AUTHORING_STORAGE_KEY, authoringMode ? "on" : "off");
+    // The raga page is the only surface that reads it, and it may be open
+    // behind this one - the same staleness the numbering preference has.
+    refreshRagaPage();
+  });
+}
+
 function initTheme() {
   const saved = localStorage.getItem(THEME_STORAGE_KEY) || "system";
   const radio = document.querySelector(`input[name="theme-pref"][value="${saved}"]`);
@@ -1972,29 +2488,50 @@ async function init() {
   initTheme();
   initKey(); // before the first renderInputs() below - it decides where the Piano's scale sits
   initLabelPrefs(); // before buildReferenceTable() and renderInputs() - both read labelPrefs
+  initAuthoringMode();
   buildReferenceTable();
   renderMuteButton();
   updateLayoutVisibility(); // also runs updateControlAvailability() - Play both defaults checked
   renderInputs();
+  // Before the await, so a shared link opened cold shows the raga view with a
+  // loading line instead of the finder flashing up and being replaced, or -
+  // worse - "no such raga", which is what a route resolved against an empty
+  // `ragas` would say about every id there is.
+  applyRoute();
   try {
     ragas = await loadRagas();
     melaNames = melakartaNames(ragas);
+    melaRagas = new Map(ragas.filter((r) => r.is_melakarta && r.mela != null)
+      .map((r) => [r.mela, r]));
   } catch (err) {
     promptEl.textContent = `Failed to load raga data: ${err.message}`;
     promptEl.hidden = false;
     return;
   }
+  dataReady = true;
   renderResults();
   nameIndex = buildNameIndex(ragas);
   buildNameList();
   buildMelaChart();
+  // Now the route can actually be answered. A no-op for the ordinary load
+  // (the finder is already showing); for `#raga/mohanam` it is what replaces
+  // the loading line with the page.
+  applyRoute();
 
   // Last, and not awaited alongside ragas.json: the chart is fully usable
   // without either of these, so a slow or missing scrape must not hold up the
   // page or take the rest of it down with it.
-  [chakras, katapayadi] = await Promise.all([loadOptionalJson("../data/melakarta_chakras.json"), loadOptionalJson("../data/katapayadi.json")]);
+  [chakras, katapayadi, ragaDetails] = await Promise.all([
+    loadOptionalJson("../data/melakarta_chakras.json"),
+    loadOptionalJson("../data/katapayadi.json"),
+    loadOptionalJson("../data/raga_details.json"),
+  ]);
   renderKatapayadiReference(document.getElementById("kata-reference"), katapayadi);
   melaChart.refresh();
+  // A melakarta's page shows the same chakra and katapayadi decoding, and
+  // these two files land after it may already have been drawn - a cold load
+  // straight to #raga/mechakalyani is exactly that race.
+  refreshRagaPage();
 }
 
 init();

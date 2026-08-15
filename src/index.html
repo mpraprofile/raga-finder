@@ -245,6 +245,26 @@
         <h1>Raga Reference</h1>
       </div>
 
+      <!-- Authoring mode, off by default and off for everyone reading. On, a
+           raga's page lists the fields nothing has been gathered for yet -
+           the reminder specs/06 asks for, kept out of the family's way. It
+           lives here rather than in the main Controls panel because it is a
+           tool for working on the app, not for using it. -->
+      <details class="ref-block">
+        <summary>Authoring</summary>
+        <label class="authoring-toggle">
+          <input type="checkbox" id="authoring-toggle">
+          Show what is not yet sourced on each raga page
+        </label>
+        <p class="label-prefs-intro">
+          Fields 10&ndash;15 of the raga page (gamaka, prayogas, mood, time of day,
+          deities, songs) have no source that publishes them in parseable form,
+          so they are gathered by hand into <code>data/raga_details.json</code> and
+          are empty until somebody has a citation for them. With this on, each
+          raga page ends with the list of what it is still missing.
+        </p>
+      </details>
+
       <!-- Collapsed by default: this page opens on the chart. The table is
            still built at load and rebuilt on every preference change -
            <details> hides its contents without unmounting them, so
@@ -314,8 +334,25 @@
         <ul id="raga-suggestions" class="search-suggestions" role="listbox" aria-label="Raga names" hidden></ul>
       </div>
     </div>
-    <p id="search-prompt" class="prompt">Type a raga name to search - partial names and typos are fine.</p>
+    <!-- No prompt line under the box: the input's own placeholder already says
+         what to type, and a second sentence saying it again was the first
+         thing on an otherwise empty page. -->
     <ul id="search-results" class="results"></ul>
+  </div>
+
+  <!-- The per-raga detail page, specs/06-raga-detail-page.md. The fourth
+       top-level view, and the first one with a URL of its own: #raga/<id>.
+       Its contents are built entirely in js/raga-page.js, because which
+       sections exist depends on what that particular raga has data for -
+       there is no fixed markup to write here. -->
+  <div id="raga-view" hidden>
+    <div class="page-header">
+      <button type="button" id="raga-back-btn" class="icon-btn" aria-label="Back">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+      </button>
+      <h1>Raga</h1>
+    </div>
+    <div id="raga-detail"></div>
   </div>
 
   <script type="module" src="js/app.js"></script>

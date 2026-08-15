@@ -396,14 +396,31 @@ h1 {
   display: none;
 }
 
+/* flex-wrap is a safety net, not a layout. A melakarta now carries two tags
+   ("CARNATIC MELA"), and the widest of them beside the longest melakarta name
+   needs about 262px against the 260.8px a 320px phone leaves here - close
+   enough that the real font decides it. From 360px up (300.8px) it never
+   engages; below that the tags drop to their own line instead of being cut
+   off, which is the failure worth having. */
 .suggestion {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 0.5rem;
   padding: 0.5rem 0.6rem;
   border-radius: 6px;
   cursor: pointer;
+}
+
+/* One wrapper so .suggestion keeps exactly two children and space-between goes
+   on meaning "name left, tags right" however many tags there are. */
+.suggestion-tags {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin-left: auto;
 }
 
 /* Hover and the keyboard cursor are deliberately the same highlight: there is
@@ -414,13 +431,16 @@ h1 {
   background: var(--accent-soft);
 }
 
+/* A dropdown chip is the same object as a result row's, so it carries .badge
+   and one of the same modifiers; this only trims it for the tighter row. The
+   uppercase, letter-spaced, no-background treatment it used to have made the
+   tags read as a second column of labels rather than as the chips they match
+   below - the same fact wearing two different faces on two screens. */
 .suggestion-tag {
   flex: none;
-  font-size: 0.7rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.6;
+  margin-left: 0;
+  font-size: 0.68rem;
+  padding: 0.1rem 0.4rem;
 }
 
 .suggestion-empty {
@@ -1249,38 +1269,53 @@ h1 {
   transition: background-color 0.12s ease, border-color 0.12s ease;
 }
 
-/* Outside the twelve-semitone window that maps onto real degrees 0-12, so
-   there's nothing in the selection model for these to be - though they do
-   still sound when pressed.
+/* The octave landmark - the chosen key's S and Ṡ.
 
-   The cue is deliberately faint. An earlier `opacity: 0.34` on the whole key
-   read as "broken" rather than "not part of this octave": it dimmed the key
-   *bodies* so hard that the keyboard stopped looking like one instrument.
-   The cue used to be a faded *label* as well, which read well on its own but
-   stopped working once transposing put a faded annotation on every key: two
-   different greys, a line apart, meaning two unrelated things - "this key is
-   outside the octave" and "this key used to be P". The key bodies carry the
-   whole cue now, and the labels on them are drawn at full strength like any
-   other, so the only faded text on the keyboard is the annotation. */
-.piano .white-key.out-of-range {
-  background: #e7eaee;
-  cursor: default;
+   These replace the `out-of-range` greying that used to dim every key outside
+   the twelve-semitone window and refuse it input. Once a stored raga could
+   legitimately step below Sa or above the upper Sa, a keyboard that greyed
+   those keys out could not enter the scale it was showing, and the grey said
+   "broken" about notes that are simply in the next octave.
+
+   Removing a fence leaves nothing to count from, so the boundary is marked
+   rather than enforced: a thin accent bar at the foot of the two Sa keys. The
+   cue is a landmark, not a state, so it must not read as "selected" (a filled
+   accent key) or as "disabled".
+
+   `inset` box-shadow rather than a border, so the key's geometry is untouched:
+   these keys sit in a row measured to fractions of a pixel and a border would
+   move their neighbours. Not `--accent-soft`, which is an 8% wash meant for
+   large background fills and is invisible as a 4px bar. */
+.piano .key.is-tonic,
+.piano .key.is-octave {
+  box-shadow: inset 0 -4px 0 rgba(74, 125, 255, 0.55);
 }
 
-/* A black key needs the opposite move from a white one to say the same thing.
-   Washing a white key toward grey reads immediately, because grey is darker
-   than its neighbours; washing a black key toward grey the same way - #2f3237
-   against #222 - was almost invisible, since it was still black next to black.
-   So it goes the other way, up to a mid grey, and takes dark text with it. The
-   result is that every out-of-range key, white or black, ends up the same
-   family of grey with the same dark lettering: one state, one look, instead of
-   two near-invisible variations on "slightly off". A lighter black key can't be
-   confused with a selected one either - selected is the accent blue. */
-.piano .black-key.out-of-range {
-  background: #767b83;
-  border-color: #55595f;
-  color: #191b1e;
-  cursor: default;
+/* Same bar, same translucency, lighter tint - because the key underneath it is
+   #222 instead of #fdfdfd and the accent has to travel the other way to read.
+   The tint is chosen by matching contrast rather than by eye: over white, the
+   accent at 0.55 lands 70 below the key in the green channel; over #222 the
+   same accent rises only 50, and barely 22 in red, which is what made it a dark
+   smudge on the narrowest key.
+
+   Matching that delta exactly (a #7ea2ff tint) was tried first and was still
+   too quiet on the key: parity of contrast is not parity of *legibility* when
+   the key is 0.56 as wide, 60% as tall, and read against a black surround
+   rather than a white one. The tint is lightened past parity to a green delta
+   of about 98. Alpha stays at 0.55 on both key colours - that is what makes
+   this one landmark seen against two backgrounds, rather than two cues that
+   happen to sit in the same place. */
+.piano .black-key.is-tonic,
+.piano .black-key.is-octave {
+  box-shadow: inset 0 -4px 0 rgba(185, 212, 255, 0.55);
+}
+
+/* Selected wins outright: a near-accent bar on top of a filled accent key reads
+   as a rendering fault rather than as two facts about one key. The landmark is
+   there to be found when the key is *not* chosen, which is when it is needed. */
+.piano .key.is-tonic.selected,
+.piano .key.is-octave.selected {
+  box-shadow: inset 0 -3px 0 #2a5adf;
 }
 
 .black-key:hover:not(.selected) {
@@ -1364,6 +1399,10 @@ h1 {
   --match-fg: oklch(0.38 0.06 152);
   --mela-bg: oklch(0.8 0.115 78);
   --mela-fg: oklch(0.28 0.06 78);
+  --trad-bg: oklch(0.94 0.04 292);
+  --trad-fg: oklch(0.42 0.1 292);
+  --trad-hi-bg: oklch(0.86 0.085 292);
+  --trad-hi-fg: oklch(0.3 0.11 292);
   /* Chakra-chart cell tints, and theme-aware for the same reason --chip-idle
      is: the light theme needs roughly twice the mix to read as the same
      weight. --cell-tint is the innermost ring, --cell-step what each ring
@@ -1387,6 +1426,10 @@ h1 {
     --match-fg: oklch(0.9 0.03 152);
     --mela-bg: oklch(0.72 0.13 78);
     --mela-fg: oklch(0.24 0.05 78);
+    --trad-bg: oklch(0.36 0.05 292);
+    --trad-fg: oklch(0.9 0.035 292);
+    --trad-hi-bg: oklch(0.48 0.09 292);
+    --trad-hi-fg: oklch(0.96 0.025 292);
     --cell-tint: 0.22;
     --cell-step: 0.026;
     --cell-hover: 0.45;
@@ -1402,6 +1445,10 @@ h1 {
   --match-fg: oklch(0.9 0.03 152);
   --mela-bg: oklch(0.72 0.13 78);
   --mela-fg: oklch(0.24 0.05 78);
+  --trad-bg: oklch(0.36 0.05 292);
+  --trad-fg: oklch(0.9 0.035 292);
+  --trad-hi-bg: oklch(0.48 0.09 292);
+  --trad-hi-fg: oklch(0.96 0.025 292);
   --cell-tint: 0.22;
   --cell-step: 0.026;
   --cell-hover: 0.45;
@@ -1420,6 +1467,10 @@ h1 {
   --match-fg: oklch(0.38 0.06 152);
   --mela-bg: oklch(0.8 0.115 78);
   --mela-fg: oklch(0.28 0.06 78);
+  --trad-bg: oklch(0.94 0.04 292);
+  --trad-fg: oklch(0.42 0.1 292);
+  --trad-hi-bg: oklch(0.86 0.085 292);
+  --trad-hi-fg: oklch(0.3 0.11 292);
 }
 
 /* Palette C - swara families (the default). A hue per family, ordered
@@ -1975,10 +2026,56 @@ h1 {
 }
 
 .result-row {
-  padding: 0.6rem 0.5rem;
+  position: relative; /* the containing block for the stretched name link and the arrow */
+  padding: 0.6rem 2rem 0.6rem 0.5rem; /* right padding keeps the text clear of the arrow */
   border-radius: 6px;
   border-bottom: 1px solid #8883;
   transition: background-color 0.12s ease;
+}
+
+/* The whole card opens the raga page. The anchor is still only on the name -
+   this stretches its hit area over the entire row, which keeps real link
+   semantics (middle-click, copy link, announced as a link, focusable) instead
+   of a click handler on the <li> that has none of them. */
+.raga-name-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+/* Everything else interactive in the row has to sit above that overlay, or the
+   card link would swallow Play and Load swaras. */
+.result-play-btn,
+.result-load-btn {
+  position: relative;
+  z-index: 1;
+}
+
+/* The cue: the same triangle the <summary> markers use, turned to point the
+   way the card goes. currentColor rather than a literal white - it has to read
+   on the light theme too, where white would be invisible. */
+.result-row-go {
+  position: absolute;
+  right: 0.6rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 0.34rem 0 0.34rem 0.42rem;
+  border-color: transparent transparent transparent currentColor;
+  /* It is painted over the stretched link, so without this the one part of
+     the card that most says "click me" is the one part that does nothing. */
+  pointer-events: none;
+  opacity: 0.35;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.result-row:hover .result-row-go,
+.result-row:focus-within .result-row-go {
+  opacity: 0.9;
+  transform: translateY(-50%) translateX(2px);
 }
 
 .result-row:hover {
@@ -2032,33 +2129,60 @@ h1 {
 }
 
 /* The bridge from a found name back to the note-based finder (see
-   loadRagaIntoKeyboard). Outlined and quiet: it sits on every row of a
-   possibly long list, so it can't compete with the row's own name, but it
-   still has to read as a button and not as another badge - hence the accent
-   on hover, which no badge ever does. */
+   loadRagaIntoKeyboard). It sits on its own line below the scales rather than
+   inline after the mela text, where it was one more small rounded thing in a
+   row that already has three of them and read as a chip - a label you can't
+   press. Everything here is aimed at the opposite reading: it is in the accent
+   colour that nothing passive in this app uses, it carries an arrow glyph, and
+   it lifts and fills on hover. Chips do none of those.
+
+   Still outlined rather than filled at rest, because it appears on every row of
+   a possibly long list and a solid accent block per row would out-shout the
+   names the list exists to show. */
 .result-load-btn {
   font: inherit;
   font-size: 0.75rem;
   font-weight: 600;
-  margin-left: 0.5rem;
-  padding: 0.1rem 0.5rem;
-  vertical-align: middle;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: none;
+  /* Takes the empty right end of the name line. `auto` rather than a fixed gap
+     so it lands against the row's right edge whatever the name's length - and
+     the row's own 2rem right padding is what keeps it clear of the go arrow. */
+  margin-left: auto;
+  padding: 0.25rem 0.6rem;
   white-space: nowrap;
-  border: 1px solid var(--card-border);
+  border: 1px solid color-mix(in srgb, var(--card-border) 35%, var(--accent) 65%);
   border-radius: 6px;
-  background: canvas;
-  color: canvastext;
+  background: var(--accent-soft);
+  color: var(--accent);
   cursor: pointer;
-  transition: border-color 0.12s ease, color 0.12s ease, transform 0.08s ease;
+  transition: background-color 0.12s ease, border-color 0.12s ease,
+              color 0.12s ease, transform 0.08s ease;
+}
+
+/* The arrow says which way the action goes - the raga's swaras travel from this
+   row onto the keyboard. aria-hidden by construction: it is generated content,
+   so it is never in the accessible name, which stays the button's own text. */
+.result-load-btn::before {
+  content: "\21B5";
+  font-size: 0.9em;
+  line-height: 1;
+  transform: scaleX(-1);
 }
 
 .result-load-btn:hover {
+  background: var(--accent);
   border-color: var(--accent);
-  color: var(--accent);
+  color: canvas;
+  transform: translateY(-1px);
 }
 
+/* Settles back to the resting position rather than shrinking: the press has to
+   undo the hover lift, and a scale() on top of it read as two effects at once. */
 .result-load-btn:active {
-  transform: scale(0.97);
+  transform: translateY(0);
 }
 
 /* Green is reserved for "this is precisely what you asked for" and is never
@@ -2112,6 +2236,91 @@ h1 {
   font-weight: 500;
 }
 
+/* The row's first line: play, the name and its match verdict, then Load swaras
+   pushed to the far end. align-items keeps the button and the play circle
+   centred on the name however the name wraps. */
+.result-head {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+/* The name takes the slack so the button is pushed right; min-width lets a long
+   name wrap inside the line instead of forcing the button off the edge. */
+.result-head .raga-name {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The row's second line: everything that says what the raga *is*. Wraps rather
+   than overflowing, since a matched variant can put a third chip here. */
+.result-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.35rem;
+}
+
+/* .badge carries a left margin for the inline case, where it trails a name.
+   Here the flex gap does that job, and both together left the first chip
+   indented past the row's own edge. */
+.result-chips .badge {
+  margin-left: 0;
+}
+
+/* The Janya chip and the reference that qualifies it, as one flex item on the
+   chip line. That is the whole point of the wrapper: the line may wrap around
+   this pair but never inside it, so "of melakarta #29-..." can never end up on
+   a line without the chip it belongs to. baseline rather than center so the
+   qualifier sits on the chip's own text line. */
+.result-janya {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+/* Quieter than .badge-mela on purpose. Amber means "one of the 72" - the status
+   the list already sorts to the top - and spending it on the 906 janyas too
+   would leave it meaning nothing. */
+.badge-janya {
+  color: canvastext;
+  background: none;
+  border: 1px solid var(--card-border);
+  opacity: 0.75;
+  font-weight: 500;
+}
+
+/* Set to match the chip it trails - same size, same weight, same muted
+   strength - so the two read as one object with the pill on its front, rather
+   than as a chip that happens to have a sentence after it. */
+.result-janya-note {
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: canvastext;
+  opacity: 0.75;
+}
+
+/* Above the card's stretched name link, like Play and Load swaras - without
+   this the row's own link swallows it. Underlined only on hover: it sits in a
+   quiet run of text and a permanent rule would pull the eye harder than the
+   raga's own name above it. */
+.parent-mela-link {
+  position: relative;
+  z-index: 1;
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted currentColor;
+}
+
+.parent-mela-link:hover,
+.parent-mela-link:focus-visible {
+  color: var(--accent);
+  border-bottom-style: solid;
+}
+
+/* Still used by the related-ragas heading, which is prose and not a chip. */
 .mela-context {
   opacity: 0.7;
   font-size: 0.85rem;
@@ -2496,4 +2705,410 @@ h1 {
 
 .mela-detail-row {
   margin: 0;
+}
+
+/* --- Raga detail page (specs/06-raga-detail-page.md) ---------------------
+   The fourth top-level view. Its sections are built in js/raga-page.js and
+   only appear when that raga has data for them, so everything here has to
+   look right with two sections present as well as with six - which is why
+   spacing lives on the sections themselves and never on the page around
+   them. */
+
+.raga-page {
+  max-width: 44rem;
+}
+
+.raga-title {
+  font-family: var(--font-headings, inherit);
+  font-size: 1.6rem;
+  margin: 0 0 0.35rem;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* "also called", the parent mela line and the school/composer line are all
+   secondary to the name and set the same way, so the eye takes the three as
+   one block of context rather than three competing statements. */
+.raga-alsocalled,
+.raga-mela-line,
+.raga-attrib {
+  margin: 0.15rem 0;
+  opacity: 0.75;
+  font-size: 0.92rem;
+}
+
+.raga-section {
+  margin-top: 1.75rem;
+}
+
+.raga-section-title {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin: 0 0 0.6rem;
+  font-weight: 600;
+}
+
+/* The scale is the reason most people open this page, so it is the one thing
+   set larger than body text rather than smaller. Grid rather than flex: the
+   two direction labels align with each other whatever their length, and the
+   play button stays at a fixed column instead of drifting with the number of
+   swaras in the line. */
+.raga-scale-line {
+  display: grid;
+  grid-template-columns: 5.5rem auto 1fr;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+}
+
+.raga-scale-label {
+  font-size: 0.8rem;
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* The play button sits in the third column with the free space *after* it,
+   so it lands just past the last swara instead of drifting to the far edge of
+   a wide page - at arm's length from the notes it plays, the button stops
+   looking like it belongs to the section rather than to that line. */
+.raga-play-btn {
+  justify-self: start;
+}
+
+.raga-scale-notes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  font-size: 1.25rem;
+}
+
+.raga-scale-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.raga-play-both-label {
+  font-size: 0.9rem;
+  opacity: 0.75;
+  margin-right: 0.35rem;
+}
+
+.raga-mela-meta {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.raga-parent {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.raga-link {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.raga-link:hover,
+.raga-link:focus-visible {
+  border-bottom-color: currentColor;
+}
+
+/* A raga name in a result row is a link, but the row is a dense list and 900
+   underlined names would read as a wall of hyperlinks. Underline on hover
+   only; the colour stays the row's own so the list keeps its shape. */
+.raga-name-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.raga-name-link:hover,
+.raga-name-link:focus-visible {
+  text-decoration: underline;
+}
+
+.raga-missing-body {
+  max-width: 32rem;
+  opacity: 0.8;
+}
+
+.raga-loading {
+  opacity: 0.6;
+}
+
+/* One hue for both traditions, with lightness carrying the difference. Colour
+   here encodes a single axis with two values, not two unrelated categories, so
+   giving each its own hue would have made the reader learn a code to recover
+   something the words already say. A weight difference needs no learning: the
+   heavier chip is the rarer, more informative one.
+
+   The hue is violet (292), clear of the amber melakarta (78) and the green
+   match (152) - the two already spoken for in a result list - and clear also of
+   the accent blue (265) the Load swaras button is drawn in. That last one
+   matters: the button sits three lines under these chips and had to stop
+   reading as one, so it must not share their hue either. Chroma stays well
+   under the melakarta's, because this chip is on all 978 rows and that one is
+   on 72.
+
+   Light themes take a pale ground with dark text, dark themes a dark ground
+   with light text - the same split .badge-mela and the match highlight make,
+   and for the same reason: a fixed translucent tint is a light-theme
+   assumption that goes muddy over near-black. */
+.badge-tradition {
+  background: var(--trad-bg);
+  color: var(--trad-fg);
+  font-weight: 500;
+}
+
+.badge-tradition.hindustani {
+  background: var(--trad-hi-bg);
+  color: var(--trad-hi-fg);
+}
+
+/* On a phone the 5.5rem label column is a fifth of the width, and a
+   seven-swara scale then wraps with one note stranded on a second line beside
+   a vertically-centred label. Stack instead: the direction label takes its own
+   line and the swaras get the full width, which is what they are here for.
+   480px rather than the 383px breakpoint used elsewhere - this is about how
+   much room eight swaras need, not about the narrowest phones. */
+@media (max-width: 480px) {
+  .raga-scale-line {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "label label"
+      "notes play";
+    gap: 0.2rem 0.5rem;
+  }
+
+  .raga-scale-label {
+    grid-area: label;
+  }
+
+  .raga-scale-notes {
+    grid-area: notes;
+  }
+
+  .raga-play-btn {
+    grid-area: play;
+    align-self: center;
+  }
+}
+
+/* --- Raga detail page: the data sections (spec 06 Phase 3) --------------- */
+
+/* Term/detail pairs for Classification. A two-column grid rather than the
+   browser's default <dl> indent: the terms are short and of similar length,
+   and lining them up lets the eye read down the terms alone. */
+.raga-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.3rem 0.9rem;
+  margin: 0;
+}
+
+.raga-facts dt {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.raga-facts dd {
+  margin: 0;
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
+
+/* Prose inside a section - the reasoning under "Same scale, different raga",
+   the provenance lines, the note about an unranked variant. Deliberately
+   narrower than the page: these are sentences to read, not data to scan. */
+.raga-note {
+  margin: 0 0 0.6rem;
+  font-size: 0.88rem;
+  opacity: 0.75;
+  max-width: 34rem;
+}
+
+.raga-fact-line {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.raga-anya {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  opacity: 0.85;
+}
+
+.raga-links {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.raga-links li {
+  padding: 0.25rem 0;
+}
+
+.raga-link-note {
+  font-size: 0.85rem;
+  opacity: 0.65;
+}
+
+/* A variant is an alternative reading of one direction, so it is set like the
+   scale lines above it but dimmer - the primary scale should still be the one
+   the eye lands on first. */
+.raga-variant-line .raga-scale-notes {
+  font-size: 1.05rem;
+  opacity: 0.85;
+}
+
+/* A variant line carries a fourth thing after the play button. Each row is its
+   own grid, so an `auto` citation column lands wherever that row's swaras
+   happen to end and the citations stagger down the block; pinning them to the
+   right edge lines them up into a column the eye can follow. */
+.raga-variant-line {
+  grid-template-columns: 5.5rem auto auto 1fr;
+}
+
+.raga-variant-line .raga-cite {
+  justify-self: end;
+}
+
+.raga-cite {
+  font-size: 0.75rem;
+  opacity: 0.55;
+  white-space: nowrap;
+  margin-left: 0.5rem;
+}
+
+.raga-cite-link {
+  color: inherit;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.raga-cite-link:hover,
+.raga-cite-link:focus-visible {
+  color: var(--accent);
+}
+
+/* The stacked mobile layout puts notes and play on the second row; the
+   citation follows the play button there rather than claiming a third. */
+@media (max-width: 480px) {
+  .raga-variant-line {
+    grid-template-columns: 1fr auto auto;
+    grid-template-areas:
+      "label label label"
+      "notes play cite";
+  }
+
+  .raga-variant-line .raga-cite {
+    grid-area: cite;
+    align-self: center;
+  }
+}
+
+/* One alternative scale of a paired set: its arohana and avarohana belong
+   together, so they get a heading that says which set they are rather than
+   being filed under two direction headings. */
+.raga-set-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  opacity: 0.55;
+  margin: 0.9rem 0 0.1rem;
+}
+
+/* A melakarta's janya list (spec 06 section 4b). Collapsed by default and
+   styled like the reference page's other <details> blocks, so a disclosure
+   behaves the same way wherever it appears in the app. */
+.raga-janyas {
+  margin-top: 0.9rem;
+}
+
+.raga-janyas > summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.raga-janyas > summary:hover {
+  color: var(--accent);
+  opacity: 1;
+}
+
+/* Multi-column so forty names read as a list to scan rather than a column to
+   scroll. Falls to one column when there is no room for two. */
+.raga-janya-links {
+  margin-top: 0.5rem;
+  columns: 2;
+  column-gap: 2rem;
+}
+
+.raga-janya-links li {
+  break-inside: avoid;
+}
+
+@media (max-width: 480px) {
+  .raga-janya-links {
+    columns: 1;
+  }
+}
+
+/* 108 names all in accent blue reads as a wall of hyperlinks rather than a
+   list of ragas - the same judgement the result rows make (see
+   .raga-name-link). Colour stays the text's; the underline on hover is what
+   says these are links. The handful of links elsewhere on the page keep the
+   accent, because there the colour is the affordance. */
+.raga-janya-links .raga-link {
+  color: inherit;
+  border-bottom: none;
+}
+
+.raga-janya-links .raga-link:hover,
+.raga-janya-links .raga-link:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+  border-bottom: none;
+}
+
+.authoring-toggle {
+  display: block;
+  margin: 0.5rem 0;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+/* A note's credit line. Sits directly under the sentence it attributes, small
+   and quiet, but always visible - the whole point of the citation rule is that
+   a reader can see where a claim came from without hunting for it. */
+.raga-credit {
+  margin: 0 0 0.8rem 0.9rem;
+  font-size: 0.82rem;
+  opacity: 0.6;
+}
+
+.raga-unsourced {
+  columns: 2;
+  column-gap: 2rem;
+  font-size: 0.9rem;
+  opacity: 0.7;
+}
+
+.raga-unsourced li {
+  break-inside: avoid;
+  padding: 0.15rem 0;
+}
+
+@media (max-width: 480px) {
+  .raga-unsourced {
+    columns: 1;
+  }
 }

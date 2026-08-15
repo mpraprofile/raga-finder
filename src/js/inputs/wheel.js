@@ -14,7 +14,7 @@
 // (index.html + app.js), not the wheel's: they turned out to belong to the
 // selection rather than to any one way of drawing it, and Piano wants them
 // too.
-import { DEGREES, SWARA_PALETTE, applySwaraColors, keyLabelHtml, labelForDegree, renderSelectionBox, stackReferenceLabel, swaraColor } from "../notation.js";
+import { DEGREES, degreeOf, SWARA_PALETTE, applySwaraColors, keyLabelHtml, labelForDegree, renderSelectionBox, stackReferenceLabel, swaraColor } from "../notation.js";
 import { playPianoTone } from "../audio.js";
 
 // All positions are in a 0-100 square coordinate space, applied as
@@ -124,8 +124,12 @@ function pointFor(degree, labelOffset = 0) {
 // the inset radius. S and S' share a point here, deliberately - the shape is
 // the *set of pitches*, and putting the octave repeat at its own radius would
 // give the outline a zero-width spike along the Sa spoke.
-function shapePointFor(degree, labelOffset = 0) {
-  return pointAt(angleFor(degree, labelOffset), SHAPE_R);
+// Takes a selection value, which is a pitch - the order path draws straight
+// from the list - so it folds before asking for an angle. The wheel is a ring
+// of twelve pitch classes and has no geometry for a mandra note; it draws the
+// swara, and the Piano is where the register shows.
+function shapePointFor(pitch, labelOffset = 0) {
+  return pointAt(angleFor(degreeOf(pitch), labelOffset), SHAPE_R);
 }
 
 // render(container, props) - the shared contract from
@@ -209,7 +213,7 @@ function appendTicks(svg, pitchClasses, labelOffset) {
 // chosen. Drawn over distinct pitch classes on the inset radius - see
 // SHAPE_R for why it isn't drawn through the node centres.
 function appendShape(root, list, labelOffset) {
-  const pcs = [...new Set(list.map((d) => d % 12))].sort((a, b) => a - b);
+  const pcs = [...new Set(list.map(degreeOf))].sort((a, b) => a - b);
   if (pcs.length === 0) return;
 
   const ticks = svgLayer("wheel-path wheel-ticks");
@@ -263,7 +267,7 @@ function laneOffset(index) {
 // ascending scale then closes its own circle, and a step to the upper Sa is a
 // zero-length segment, skipped.
 function appendOrderPath(root, list, labelOffset) {
-  const pcs = [...new Set(list.map((d) => d % 12))].sort((a, b) => a - b);
+  const pcs = [...new Set(list.map(degreeOf))].sort((a, b) => a - b);
   const svg = svgLayer("wheel-path");
   appendTicks(svg, pcs, labelOffset);
 
@@ -502,7 +506,10 @@ function attachPointerHandlers(root, { selected, list, orderMode, onReplace, nod
   // occurrence, since repeats are the point.
   function commitTap(degree) {
     if (!orderMode && selected.has(degree)) {
-      onReplace(list.filter((d) => d !== degree));
+      // Every octave of it: the wheel has one node per swara, so a tap can
+      // only mean the swara, not one register of it. The Piano is where a
+      // single register is chosen or dropped.
+      onReplace(list.filter((d) => degreeOf(d) !== degree));
       return;
     }
     onReplace(place([degree]));
@@ -512,7 +519,7 @@ function attachPointerHandlers(root, { selected, list, orderMode, onReplace, nod
   // that wipes a selection is far worse than one that adds a note too many.
   function commitRun(entered) {
     const additions = [];
-    const have = new Set(list);
+    const have = new Set(list.map(degreeOf));
     for (const degree of entered) {
       if (!orderMode && have.has(degree)) continue;
       additions.push(degree);

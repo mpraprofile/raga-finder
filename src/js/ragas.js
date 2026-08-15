@@ -16,6 +16,27 @@ export function directionNoteSet(notes) {
   return set;
 }
 
+// The same run as *pitches* - degree plus its octave - which is what a stored
+// note means once `sthayi` is populated (scripts/sthayi.py). Matching folds to
+// degrees, so this is not what finds a raga; it is what tells a raga the user
+// played *at the registers it is written in* from one that merely uses the same
+// swaras. See promoteRegisterMatches in app.js.
+export function pitchOf(note) {
+  return note.degree + 12 * (note.sthayi || 0);
+}
+
+export function directionPitchSet(notes) {
+  const set = new Set();
+  for (const note of notes) set.add(pitchOf(note));
+  return set;
+}
+
+export function formPitchSet(form) {
+  const set = directionPitchSet(form.arohana);
+  for (const p of directionPitchSet(form.avarohana)) set.add(p);
+  return set;
+}
+
 // --- Variants ------------------------------------------------------------
 // Some ragas are listed with more than one scale, and the one stored as
 // primary was picked by a rule that is often only a placeholder (see
@@ -314,7 +335,11 @@ export function grahaTonic(list, direction = 1) {
   // Pitch classes: degrees 0 and 12 are the same swara an octave apart, so
   // they're one candidate tonic, not two. 0 is where the tonic already is,
   // so it's never a rotation *target*.
-  const candidates = [...new Set(list.map((d) => d % 12))].sort((a, b) => a - b).filter((pc) => pc !== 0);
+  // A true modulo, not JS's remainder: a selection can hold a mandra pitch now,
+  // and `-1 % 12` is -1, which is not a pitch class and would sort below Sa as
+  // a bogus rotation target.
+  const candidates = [...new Set(list.map((d) => ((d % 12) + 12) % 12))]
+    .sort((a, b) => a - b).filter((pc) => pc !== 0);
   if (candidates.length === 0) return null; // nothing but Sa - no other note to hand the tonic to
   return direction >= 0 ? candidates[0] : candidates[candidates.length - 1];
 }
@@ -372,7 +397,14 @@ export function melaContext(raga, melaNames) {
   if (raga.mela == null) return "Mela unknown";
   if (raga.is_melakarta) return `Melakarta #${raga.mela}`;
   const parent = melaNames?.get(raga.mela);
-  return parent ? `Janya of mela ${raga.mela} (${parent})` : `Janya of mela ${raga.mela}`;
+  // "Janya of melakarta 20-Natabhairavi": the number and the name read as one
+  // identifier, which is how a melakarta is actually referred to. The older
+  // "mela 20 (Natabhairavi)" put the name in a parenthesis, as though it were
+  // an aside rather than half of what identifies the parent.
+  // U+2011 non-breaking hyphen, not an ASCII one: on a phone the row wrapped
+  // as "melakarta 10-" / "Natakapriya", splitting the very identifier the
+  // hyphen exists to join. The break now falls before the number instead.
+  return parent ? `Janya of melakarta ${raga.mela}‑${parent}` : `Janya of melakarta ${raga.mela}`;
 }
 
 // --- Free-text raga-name search ------------------------------------------

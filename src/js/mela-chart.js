@@ -244,11 +244,15 @@ function legendHtml() {
 // against their own mela numbers. Deliberately not re-derived here: a second
 // implementation of the syllable segmentation would be a second thing to be
 // wrong, and this one is the one a human ran and read.
-function decodeFor(katapayadi, mela) {
+// Exported for the raga detail page (specs/06), which shows a melakarta's own
+// katapayadi decoding. Exported rather than copied: two renderings of the same
+// decode that could disagree is exactly the kind of drift this repo keeps
+// finding in its own notes.
+export function decodeFor(katapayadi, mela) {
   return katapayadi?.decodes?.find((d) => d.mela === mela) || null;
 }
 
-function decodeHtml(decode) {
+export function decodeHtml(decode) {
   if (!decode) return "";
   const chips = decode.syllables
     .map((s) => `<span class="kata-syllable">${esc(s.text)}<span class="kata-arrow">&#8594;</span><span class="kata-digit">${s.digit}</span></span>`)
