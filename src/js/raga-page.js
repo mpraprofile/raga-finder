@@ -249,7 +249,7 @@ function tempoControl(deps) {
     input.dataset.tempo = String(rate);
     input.checked = rate === deps.tempo.get();
     label.appendChild(input);
-    label.append(`${rate}x`);
+    label.append(deps.tempo.label ? deps.tempo.label(rate) : `${rate}x`);
     wrap.appendChild(label);
   }
   return wrap;

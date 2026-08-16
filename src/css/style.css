@@ -2029,58 +2029,84 @@ h1 {
 }
 
 .result-row {
-  position: relative; /* the containing block for the stretched name link and the arrow */
-  padding: 0.6rem 2rem 0.6rem 0.5rem; /* right padding keeps the text clear of the arrow */
+  position: relative; /* the containing block for the open link at its right */
+  /* Right gutter is the width of that link's invisible column, so text stops
+     where the target begins - the arrow then sits in what looks like ordinary
+     margin rather than in a reserved slot. */
+  padding: 0.6rem 2.3rem 0.6rem 0.5rem;
   border-radius: 6px;
   border-bottom: 1px solid #8883;
   transition: background-color 0.12s ease;
 }
 
-/* The whole card opens the raga page. The anchor is still only on the name -
-   this stretches its hit area over the entire row, which keeps real link
-   semantics (middle-click, copy link, announced as a link, focusable) instead
-   of a click handler on the <li> that has none of them. */
-.raga-name-link::after {
+/* The card-wide hit area that used to live here is gone (2026-08-15), and with
+   it the z-index dance that kept Play and Load swaras out from under it. The
+   row's only door is .result-open now. */
+
+/* The door. The *mark* is one small triangle; the *target* is the whole column
+   it sits in, full card height and entirely invisible. Separating those two is
+   the point: four previous versions each tried to make the door obvious by
+   drawing something bigger, and on a row that already carries a Play circle, a
+   Load swaras button, three chips and a run of swara pills, every one of them
+   read as clutter. Nothing is drawn here but the arrow.
+
+   currentColor, not accent: a fifth colour in the card was part of what made the
+   earlier attempts tiring, and as ink the mark belongs to the row instead of
+   competing with it. Opacity 0.55 rather than the 0.35 the old decorative arrow
+   used - that one really was too faint to notice, which is half of why the card
+   ever needed a louder door. */
+.result-open {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 2.3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  text-decoration: none;
+  opacity: 0.55;
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+/* The same triangle the <details> markers use, turned to point the way the card
+   goes - so "this goes somewhere" looks the same everywhere in the app. Drawn
+   with borders on a 0x0 box, in currentColor, so it follows the link through
+   every state without being restated. */
+.result-open::after {
   content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-}
-
-/* Everything else interactive in the row has to sit above that overlay, or the
-   card link would swallow Play and Load swaras. */
-.result-play-btn,
-.result-load-btn {
-  position: relative;
-  z-index: 1;
-}
-
-/* The cue: the same triangle the <summary> markers use, turned to point the
-   way the card goes. currentColor rather than a literal white - it has to read
-   on the light theme too, where white would be invisible. */
-.result-row-go {
-  position: absolute;
-  right: 0.6rem;
-  top: 50%;
-  transform: translateY(-50%);
   width: 0;
   height: 0;
   border-style: solid;
   border-width: 0.34rem 0 0.34rem 0.42rem;
   border-color: transparent transparent transparent currentColor;
-  /* It is painted over the stretched link, so without this the one part of
-     the card that most says "click me" is the one part that does nothing. */
-  pointer-events: none;
-  opacity: 0.35;
-  transition: opacity 0.12s ease, transform 0.12s ease;
 }
 
-.result-row:hover .result-row-go,
-.result-row:focus-within .result-row-go {
-  opacity: 0.9;
-  transform: translateY(-50%) translateX(2px);
+.result-open:hover {
+  opacity: 1;
+  transform: translateX(2px);
 }
 
+/* :active is the one interaction state a touchscreen reports - :hover never
+   fires there - so this is what makes a tap confirm itself on a phone. */
+.result-open:active {
+  opacity: 1;
+  transform: translateX(2px) scale(0.85);
+}
+
+/* With no border or fill of its own there is nothing for a focus ring to hug,
+   so it gets one drawn against the row. */
+.result-open:focus-visible {
+  opacity: 1;
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+  border-radius: 6px;
+}
+
+/* The cue: the same triangle the <summary> markers use, turned to point the
+   way the card goes. currentColor rather than a literal white - it has to read
+   on the light theme too, where white would be invisible. */
 .result-row:hover {
   background: color-mix(in srgb, transparent, canvastext 5%);
 }
@@ -2245,20 +2271,31 @@ h1 {
   font-weight: 500;
 }
 
-/* The row's first line: play, the name and its match verdict, then Load swaras
-   pushed to the far end. align-items keeps the button and the play circle
-   centred on the name however the name wraps. */
+/* The row's first line: the name and its match verdict, then every control the
+   row has, gathered at the far end. Wraps so that on a narrow screen the
+   controls drop to their own line under the name rather than squeezing it. */
 .result-head {
   display: flex;
   align-items: center;
-  gap: 0;
+  flex-wrap: wrap;
+  gap: 0.35rem 0;
 }
 
-/* The name takes the slack so the button is pushed right; min-width lets a long
-   name wrap inside the line instead of forcing the button off the edge. */
+/* The name takes the slack so the controls are pushed right; min-width lets a
+   long name wrap inside the line instead of forcing them off the edge. */
 .result-head .raga-name {
   flex: 1;
   min-width: 0;
+}
+
+/* Play, Load swaras and Open, in that order and as one unit - so they wrap
+   together and there is a single place in the row to look for a control. */
+.result-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: none;
+  margin-left: auto;
 }
 
 /* The row's second line: everything that says what the raga *is*. Wraps rather
@@ -2900,6 +2937,15 @@ h1 {
 .tempo-pills label:has(input[type="radio"]) {
   padding-left: 0.45rem;
   padding-right: 0.45rem;
+  /* All four the same width, whatever their glyphs measure. A row of pills is a
+     set of equal choices and should look like one; sized to content, "½x" and
+     "1x" came out different widths and the group read as ragged. min-width
+     rather than a fixed width so the padding still governs, and inline-flex so
+     the label centres inside the width it is given. */
+  min-width: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* On the raga page it is a block under Play both rather than one item in a
@@ -2942,6 +2988,12 @@ h1 {
 /* A raga name in a result row is a link, but the row is a dense list and 900
    underlined names would read as a wall of hyperlinks. Underline on hover
    only; the colour stays the row's own so the list keeps its shape. */
+/* Ordinary text colour, not link colour. It is still a link and still opens the
+   page, but the strip at the edge is what advertises that now - and a row
+   already carrying green swara pills, an amber mela chip, a violet tradition
+   chip and an accent Load swaras button has no room left for an accent title
+   too. The underline on hover is enough to say it is clickable to anyone who
+   goes looking. */
 .raga-name-link {
   color: inherit;
   text-decoration: none;

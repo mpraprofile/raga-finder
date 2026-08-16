@@ -37,7 +37,9 @@ const LOOP_END_DELAY_MS = 900;
 
 // Playback speed, as a divisor on both delays above: 1x is the pace every
 // scale has always played at, 2x and 3x are for when you already know the
-// shape and want to hear it as a phrase rather than as separate notes.
+// shape and want to hear it as a phrase rather than as separate notes, and
+// 0.5x is the other way - slow enough to sing along with or to place a
+// gamaka, which is the pace a scale is actually learned at.
 //
 // One setting for the whole app rather than one per surface. The control for
 // it is on the raga page, which is where you sit and replay a scale, but a
@@ -50,7 +52,13 @@ const LOOP_END_DELAY_MS = 900;
 // what a fast passage does on a real instrument, and cutting the release to
 // prevent it would make the top speed sound clipped rather than quick.
 const TEMPO_STORAGE_KEY = "playbackTempo";
-const TEMPO_CHOICES = [1, 2, 3];
+const TEMPO_CHOICES = [0.5, 1, 2, 3];
+// What a rate is written as. The stored value stays the number it divides by;
+// only the label is a fraction, because "0.5x" beside "1x" and "2x" is a
+// decimal in a row of integers - it reads as a different kind of quantity, and
+// it is the one label wide enough to have set every pill's width.
+const TEMPO_LABELS = { 0.5: "½x" };
+const tempoLabel = (rate) => TEMPO_LABELS[rate] ?? `${rate}x`;
 let playbackTempo = 1;
 
 function noteGap() {
@@ -1039,13 +1047,15 @@ function renderRow(raga, badge, matched, tint = Boolean(badge && badge.tier === 
 
   const name = document.createElement("span");
   name.className = "raga-name";
-  // The whole row opens the raga's page, but the thing that makes it do so is
-  // still one real <a href> on the name: CSS stretches that anchor's hit area
-  // over the entire card (see .raga-name-link::after). A click handler on the
-  // <li> would have been fewer lines and worse - no middle-click, no "copy
-  // link", nothing announced as a link, and the router would stop being the
-  // only thing that decides what a hash means. The row's own buttons sit above
-  // the stretched area and keep working.
+  // The name is a link to the raga's page, and so is the Open button at the end
+  // of this line - two doors, one destination. The stretched hit area that used
+  // to make the whole card a third is gone: a card that is clickable everywhere
+  // tells the reader nothing about where to click, or that clicking does
+  // anything at all.
+  //
+  // Both remain real <a href>s rather than click handlers, which is what keeps
+  // middle-click, "copy link address" and link semantics for a screen reader,
+  // and keeps the router the only thing deciding what a hash means.
   const nameLink = document.createElement("a");
   nameLink.className = "raga-name-link";
   nameLink.href = ragaHref(raga);
@@ -1130,22 +1140,59 @@ function renderRow(raga, badge, matched, tint = Boolean(badge && badge.tier === 
   // still covers the whole card and the button still sits above it.
   const head = document.createElement("div");
   head.className = "result-head";
-  head.appendChild(playBtn);
   head.appendChild(name);
-  if (loadable) head.appendChild(loadButton(raga));
+
+  // Every control the row has, gathered at the right end of the name line:
+  // Play, Load swaras, and the door. Grouped rather than spread across the row
+  // so there is one place to look for "things I can press" and one for the
+  // reading matter, and so the group wraps as a unit on a narrow screen.
+  const actions = document.createElement("div");
+  actions.className = "result-actions";
+  actions.appendChild(playBtn);
+  if (loadable) actions.appendChild(loadButton(raga));
+  head.appendChild(actions);
 
   li.appendChild(head);
+  // The door runs down the card's right edge rather than sitting in that group:
+  // it is where the card *goes*, not something it does, and a labelled button
+  // among the others made a row of four controls out of what should read as two
+  // plus an exit.
+  li.appendChild(openStrip(raga));
   li.appendChild(chips);
   li.appendChild(scaleLine("Arohana", raga.arohana, matched.arohana));
   li.appendChild(scaleLine("Avarohana", raga.avarohana, matched.avarohana));
-  // The cue that the card goes somewhere. Same idea as the disclosure triangle
-  // beside "Controls", pointing right instead of down, and aria-hidden because
-  // it says nothing the name's own link does not already say.
-  const go = document.createElement("span");
-  go.className = "result-row-go";
-  go.setAttribute("aria-hidden", "true");
-  li.appendChild(go);
   return li;
+}
+
+// The door: the arrow at the right edge, and a tall invisible hit area behind
+// it. Nothing is drawn but the mark itself - no border, no fill, no tint.
+//
+// Four heavier versions came first, and all of them failed the same way rather
+// than four different ways. A row already carries a green Play circle, an
+// accent Load swaras button, three chips and a run of green swara pills; every
+// attempt at an obvious door added *another* bordered, tinted object to that,
+// and each one read as clutter no matter what shape it took. The weight was the
+// fault, not the geometry.
+//
+// So this subtracts instead. The card's original arrow was never the thing
+// anyone objected to - it had exactly two faults, that it was not clickable
+// (`pointer-events: none`, on the one part of the card that looked pressable)
+// and that at 0.35 opacity nobody saw it. Both are fixed here and nothing else
+// is introduced: the mark is in `currentColor` rather than accent blue, so the
+// row loses a colour rather than gaining one, and the target it sits in is the
+// same height as the panel that preceded it while being invisible.
+//
+// A real <a href>, not a click handler, so middle-click, "copy link address"
+// and screen-reader link semantics all still work. The arrow is generated in
+// CSS, so it is never part of the accessible name - which says whose page,
+// because nine hundred links all announcing "Open" are no use to anyone
+// navigating a page by its links.
+function openStrip(raga) {
+  const link = document.createElement("a");
+  link.className = "result-open";
+  link.href = ragaHref(raga);
+  link.setAttribute("aria-label", `Open ${raga.name}'s page`);
+  return link;
 }
 
 // --- Raga name search ----------------------------------------------------
@@ -1578,6 +1625,35 @@ const VIEWS = {
   raga: () => ragaView,
 };
 
+// Where each route was left, so going back returns you to the row you clicked
+// rather than to the top of a nine-hundred-row list.
+//
+// The back button always meant to do this - it calls history.back() precisely
+// so the reader gets "that list, scrolled where you left it" - but showView()
+// scrolled every arriving view to the top, which undid it on the way in. The
+// browser's own scroll restoration cannot help here: these are hash routes into
+// views toggled with `hidden`, so it restores against a page whose content has
+// not been swapped in yet. Hence `manual`, and hence doing it ourselves.
+//
+// Recorded by a passive scroll listener rather than read at the moment of
+// navigation: applyRoute() runs on hashchange, by which time location.hash is
+// already the *new* route and the old one's position is no longer knowable.
+const scrollByRoute = new Map();
+let currentRouteKey = null;
+
+if ("scrollRestoration" in history) history.scrollRestoration = "manual";
+
+window.addEventListener("scroll", () => {
+  if (currentRouteKey !== null) scrollByRoute.set(currentRouteKey, window.scrollY);
+}, { passive: true });
+
+// A raga page reached fresh opens at its title; one reached by going *back*
+// opens where it was left. Both fall out of keying on the hash: a route only
+// has a remembered position if it has been scrolled before.
+function restoreScroll(key) {
+  window.scrollTo({ top: scrollByRoute.get(key) ?? 0 });
+}
+
 function showView(name) {
   stopAllPlayback();
   closeSuggestions(); // positioned against the search input, which may be on its way out
@@ -1589,8 +1665,10 @@ function showView(name) {
   // a real containing block to measure against. Cheap - about a hundred
   // nodes - and it keeps the current selection.
   if (name === "settings") melaChart?.refresh();
+  // No scrolling here any more - applyRoute() restores the arriving route's own
+  // position once its content is in place, which is necessarily after this.
+  // Focusing can scroll on its own, so it happens before that restore, not after.
   if (name === "search") ragaSearchInput.focus();
-  else window.scrollTo({ top: 0 });
 }
 
 // Everything the detail page needs from the app, in one place. raga-page.js
@@ -1633,7 +1711,7 @@ const ragaPageDeps = {
   // The tempo pills. Read on every play rather than captured when a player is
   // built, so changing the speed applies to the next press without the page
   // needing to re-render its buttons.
-  tempo: { choices: TEMPO_CHOICES, get: () => playbackTempo, set: setTempo },
+  tempo: { choices: TEMPO_CHOICES, label: tempoLabel, get: () => playbackTempo, set: setTempo },
   // The page's three Play buttons join the same single-player-at-a-time
   // registry the result rows use, so a row preview and a detail page cannot
   // sound over each other - they are one app, and this page is reached from
@@ -1698,13 +1776,20 @@ let dataReady = false;
 
 function applyRoute() {
   const hash = location.hash;
+  // Claim the arriving route before anything renders, so the scroll listener
+  // files any movement from here on under the right key.
+  currentRouteKey = hash || "#";
   const ragaMatch = RAGA_ROUTE.exec(hash);
   if (ragaMatch) {
     showRagaRoute(decodeURIComponent(ragaMatch[1]));
-    return;
+  } else {
+    document.title = BASE_TITLE;
+    showView(STATIC_ROUTES[hash] ?? "main");
   }
-  document.title = BASE_TITLE;
-  showView(STATIC_ROUTES[hash] ?? "main");
+  // Last, once the view is shown and its content built: a page that is still
+  // empty has no height to scroll into, so restoring any earlier would land at
+  // the top and look like the memory had not worked.
+  restoreScroll(currentRouteKey);
 }
 
 // The raga's name goes in the document title, not in the view's own header
