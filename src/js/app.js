@@ -144,6 +144,10 @@ let insertAt = null;
 let keySemitone = 0;
 let muted = false;
 let ragas = [];
+// Retired raga id -> the raga that absorbed it (data/id_redirects.json, written
+// by scripts/rebuild_corpus.py). Two records found to be one raga keep one id;
+// a link to the other must still land.
+let idRedirects = null;
 let melaNames = new Map(); // mela number -> that melakarta's name, filled after load
 // mela number -> the melakarta raga itself, so a janya's row can link to its
 // parent's page. Names alone are not enough: a href needs the parent's id.
@@ -1804,6 +1808,12 @@ function showRagaRoute(id) {
     return;
   }
   const raga = ragas.find((r) => r.id === id);
+  const movedTo = raga ? null : idRedirects?.[id];
+  if (movedTo) {
+    // Replace, not push: Back should not return to an id that only redirects.
+    location.replace(`#raga/${encodeURIComponent(movedTo)}`);
+    return;
+  }
   if (!raga) {
     document.title = `Unknown raga · ${BASE_TITLE}`;
     renderRagaNotFound(ragaDetailEl, id);
@@ -2614,7 +2624,11 @@ async function init() {
   // `ragas` would say about every id there is.
   applyRoute();
   try {
-    ragas = await loadRagas();
+    // Awaited together: the route resolved just below may be a retired id.
+    [ragas, idRedirects] = await Promise.all([
+      loadRagas(),
+      loadOptionalJson("../data/id_redirects.json"),
+    ]);
     melaNames = melakartaNames(ragas);
     melaRagas = new Map(ragas.filter((r) => r.is_melakarta && r.mela != null)
       .map((r) => [r.mela, r]));

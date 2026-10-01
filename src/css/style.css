@@ -2281,11 +2281,22 @@ h1 {
   gap: 0.35rem 0;
 }
 
-/* The name takes the slack so the controls are pushed right; min-width lets a
-   long name wrap inside the line instead of forcing them off the edge. */
+/* The name takes the slack so the controls are pushed right.
+
+   min-content, not 0. A raga name is one long unbreakable word - a 160px
+   "Dhirasankarabharanam" - and the match badge sits inline after it. With a
+   floor of 0 the flex item was free to shrink below that word, at which point
+   the word overflowed its own box and carried the badge out with it, straight
+   across Play and Load swaras. The row never wrapped, because from flexbox's
+   point of view the item had happily accepted the smaller width.
+
+   Floored at min-content the item can no longer be squeezed narrower than the
+   word, so the badge wraps to a second line inside the name instead of leaving
+   the box. This costs nothing where there is room: on a wide window the item is
+   larger than its min-content either way, and the line is unchanged. */
 .result-head .raga-name {
   flex: 1;
-  min-width: 0;
+  min-width: min-content;
 }
 
 /* Play, Load swaras and Open, in that order and as one unit - so they wrap

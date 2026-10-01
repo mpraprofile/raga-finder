@@ -386,6 +386,16 @@ function citation(sourceKey, raga) {
   return span;
 }
 
+// A variant the source printed under a name that belongs to another raga
+// (`read_as`, spec 07 verdict Q8: karnatik's mela-45 "Pantuvarāḷi" row, now
+// Śubhapantuvarāḷi's) keeps that name - in the citation cell, since the row is
+// a fixed grid and the name is part of where the reading came from.
+function variantCitation(variant, raga) {
+  const cite = citation(variant.source, raga);
+  if (variant.read_as) cite.prepend(`as ${variant.read_as} · `);
+  return cite;
+}
+
 function variantsBlock(raga, deps) {
   if (!raga.variants?.length) return null;
   const wrap = section("Also given as");
@@ -416,7 +426,7 @@ function variantsBlock(raga, deps) {
         play.title = `Play this alternative ${direction}`;
         deps.attachPlayer(play, () => deps.notesSequence(variant.notes));
         row.appendChild(play);
-        row.appendChild(citation(variant.source, raga));
+        row.appendChild(variantCitation(variant, raga));
         wrap.appendChild(row);
       }
     }
@@ -451,7 +461,7 @@ function variantsBlock(raga, deps) {
       play.title = `Play this alternative ${direction}`;
       deps.attachPlayer(play, () => deps.notesSequence(variant.notes));
       row.appendChild(play);
-      row.appendChild(citation(variant.source, raga));
+      row.appendChild(variantCitation(variant, raga));
       wrap.appendChild(row);
     }
   }
@@ -521,6 +531,39 @@ function sameScaleBlock(raga, deps) {
       other.mela !== raga.mela ? `melakarta ${other.mela}` : null,
     ].filter(Boolean);
     if (context.length) item.appendChild(el("span", "raga-link-note", ` — ${context.join(", ")}`));
+    list.appendChild(item);
+  }
+  wrap.appendChild(list);
+  return wrap;
+}
+
+// --- 6b. Same name, other ragas --------------------------------------------
+
+// The counterpart of the section above: not one scale under several names but
+// one name over several ragas. The sources list a raga by this name under
+// another parent mela (or tradition), and each is kept as the source gives it
+// (spec 07, user rule 2026-09-27) - so the page points at the others instead
+// of pretending the name has one meaning.
+function sameNameBlock(raga, deps) {
+  if (!raga.same_name_as?.length) return null;
+  const others = raga.same_name_as.map(deps.ragaById).filter(Boolean);
+  if (!others.length) return null;
+
+  const wrap = section("Same name, other ragas");
+  wrap.appendChild(el("p", "raga-note",
+    "The sources use this name for other ragas too — under a different parent "
+    + "melakarta, or in another tradition. Each is kept as its source gives it."));
+  const list = el("ul", "raga-links");
+  for (const other of others.sort((a, b) => (a.mela ?? 99) - (b.mela ?? 99))) {
+    const item = el("li");
+    const link = el("a", "raga-link", other.name);
+    link.href = ragaHref(other);
+    item.appendChild(link);
+    const context = [
+      other.tradition === "hindustani" ? "Hindustani" : null,
+      other.mela != null ? `melakarta ${other.mela}` : "parent mela not stated",
+    ].filter(Boolean);
+    item.appendChild(el("span", "raga-link-note", ` — ${context.join(", ")}`));
     list.appendChild(item);
   }
   wrap.appendChild(list);
@@ -649,6 +692,21 @@ function detailsBlock(raga, deps) {
 // Three states that must read differently, per spec 06. The fourth - a raga
 // with only one source, which is 862 of them - shows nothing at all: "only one
 // source has been consulted" is not worth a section on nine hundred pages.
+// --- Notes from the sources -------------------------------------------------
+
+// `notes` carries what a source says beside the scale: karnatik's "Called X in
+// the Dikshitar (asampūrṇa mēla) system", its "?" doubt marker. It also carries
+// the pipeline's own "vakra: ... verify against source" flag, which is a
+// reminder for whoever checks the data, not something a reader should see.
+function sourceNotesBlock(raga) {
+  const notes = (raga.notes || "").split("; ")
+    .filter((note) => note && !note.startsWith("vakra:"));
+  if (!notes.length) return null;
+  const wrap = section("Notes from the sources");
+  for (const note of notes) wrap.appendChild(el("p", "raga-fact-line", note));
+  return wrap;
+}
+
 function provenanceBlock(raga, deps) {
   const sources = raga.sources || [];
   const second = sources.find((s) => s.source === "wikipedia-article");
@@ -805,8 +863,10 @@ export function renderRagaPage(root, raga, deps) {
     classificationBlock,
     melaBlock,
     sameScaleBlock,
+    sameNameBlock,
     hindustaniBlock,
     detailsBlock,
+    sourceNotesBlock,
     provenanceBlock,
     janyaBlock,
   ]) {

@@ -10,7 +10,7 @@
 // out of. Network-first means anyone with connectivity always gets
 // current content; the cache exists purely for when they don't have any.
 
-const CACHE_NAME = "raga-finder-v11"; // bump whenever the precache list below changes
+const CACHE_NAME = "raga-finder-v12"; // bump whenever the precache list below changes
 
 const PRECACHE_URLS = [
   "./index.html",
@@ -51,6 +51,9 @@ const PRECACHE_URLS = [
   // fetched on every load, and an offline miss would log a failure for a file
   // that is meant to be there.
   "../data/raga_details.json",
+  // Retired raga ids -> the raga that absorbed them (spec 07 verdicts), so a
+  // bookmarked #raga/<old id> still lands offline.
+  "../data/id_redirects.json",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   // Not decoration: this one is the search button's entire glyph, painted as a
