@@ -17,6 +17,7 @@ import {
   directionPitchSet,
   directionNoteSet,
   ragaForms,
+  prepare as prepareMatching,
 } from "./ragas.js";
 import { playPianoTone, setMuted } from "./audio.js";
 import { REFERENCE_ROWS, referenceRowCode, noteLabel, degreeOf } from "./notation.js";
@@ -911,14 +912,14 @@ function renderResults() {
   // This used to be withheld from the whole finder on the reasoning that you
   // had built the selection and would not want it overwritten. That holds for
   // the row that already *is* your selection, and for no other row.
-  for (const raga of exact) {
-    const kind = exactKind && exactKind.get(raga.id);
-    const badge = { text: kind ? `exact (${kind})` : "exact", tier: "exact" };
-    resultsEl.appendChild(renderRow(raga, badge, matched, true, { loadable: Boolean(kind) }));
-  }
-  for (const raga of contains) {
-    resultsEl.appendChild(renderRow(raga, null, matched, false, { loadable: true }));
-  }
+  appendPaged(resultsEl, [
+    ...exact.map((raga) => () => {
+      const kind = exactKind && exactKind.get(raga.id);
+      const badge = { text: kind ? `exact (${kind})` : "exact", tier: "exact" };
+      return renderRow(raga, badge, matched, true, { loadable: Boolean(kind) });
+    }),
+    ...contains.map((raga) => () => renderRow(raga, null, matched, false, { loadable: true })),
+  ]);
 }
 
 // The tallies that used to sit in the middle of the wheel. They belong here:
@@ -951,8 +952,10 @@ function renderOrderedResults() {
 
   const matched = currentMatchedSets();
   resultsEl.appendChild(countsRow(exact.length, contains.length));
-  for (const raga of exact) resultsEl.appendChild(renderRow(raga, orderBadge(raga, "exact"), matched, true));
-  for (const raga of contains) resultsEl.appendChild(renderRow(raga, orderBadge(raga, "partial"), matched, false));
+  appendPaged(resultsEl, [
+    ...exact.map((raga) => () => renderRow(raga, orderBadge(raga, "exact"), matched, true)),
+    ...contains.map((raga) => () => renderRow(raga, orderBadge(raga, "partial"), matched, false)),
+  ]);
 }
 
 // Both matchOrdered() and matchOrderedSeparate() annotate matchedArohana/
@@ -991,6 +994,48 @@ function currentMatchedSets() {
     return { arohana: s, avarohana: s };
   }
   return { arohana: foldedSet(arohanaSel), avarohana: foldedSet(avarohanaSel) };
+}
+
+// Result lists are drawn a page at a time. Nothing is withheld - the counts
+// row still says how many there are, and the button at the foot draws the
+// next lot - but a single pressed Sa "contains" nearly the whole corpus, and
+// drawing 5,500 rows at once took three seconds on a laptop and far longer
+// on a phone, on every tap. `rows` are thunks so that a row is only built
+// when its page is reached. `before` keeps a paged list above whatever
+// follows it in the same <ul> - the search view's related-ragas section.
+const FIRST_PAGE = 50;
+const NEXT_PAGE = 100;
+
+function appendPaged(listEl, rows, label = "ragas", before = null) {
+  let shown = 0;
+  function drawPage(count) {
+    const frag = document.createDocumentFragment();
+    const end = Math.min(rows.length, shown + count);
+    for (; shown < end; shown++) frag.appendChild(rows[shown]());
+    const first = frag.firstElementChild;
+    const left = rows.length - shown;
+    if (left > 0) frag.appendChild(showMoreRow(left, label, (li) => {
+      li.remove();
+      // The button that had focus is gone; hand it to the first new row, so
+      // a keyboard reader carries on from where the list grew.
+      drawPage(NEXT_PAGE)?.querySelector("a, button")?.focus({ preventScroll: true });
+    }));
+    listEl.insertBefore(frag, before);
+    return first;
+  }
+  drawPage(FIRST_PAGE);
+}
+
+function showMoreRow(left, label, onClick) {
+  const li = document.createElement("li");
+  li.className = "show-more";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "show-more-btn";
+  btn.textContent = `Show ${Math.min(left, NEXT_PAGE)} more (${left} ${label} left)`;
+  btn.addEventListener("click", () => onClick(li));
+  li.appendChild(btn);
+  return li;
 }
 
 function emptyRow(text) {
@@ -1229,7 +1274,21 @@ function matchesFor(query) {
   return lastSearchMatches;
 }
 
+// Typing waits this long for a pause before the results list is rebuilt. The
+// suggestion dropdown is capped at a dozen rows and still answers every key;
+// the list below it is the expensive part, and redrawing it for each letter of
+// a name nobody has finished typing was most of what made typing feel stuck.
+const SEARCH_DELAY_MS = 150;
+let searchTimer = null;
+
+function scheduleRagaSearch() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(performRagaSearch, SEARCH_DELAY_MS);
+}
+
 function performRagaSearch() {
+  clearTimeout(searchTimer); // a direct call answers for any search still pending
+  searchTimer = null;
   stopActiveRowPreview(); // results are rebuilt from scratch below - see renderResults()'s own use of this
   searchResultsEl.innerHTML = "";
 
@@ -1251,25 +1310,26 @@ function performRagaSearch() {
   // whether to badge it as such. Exactness is judged on the folded forms
   // (see isExactNameMatch), so "Thodi" counts as naming Todi outright.
   const isClearMatch = isExactNameMatch(top, query);
-  matches.forEach((raga, i) => {
-    const badge = i === 0 && isClearMatch ? { text: "exact name", tier: "exact" } : null;
-    searchResultsEl.appendChild(renderRow(raga, badge, empty, Boolean(badge), { loadable: true }));
-  });
 
   // Related ragas: everything else sharing the top match's parent mela
   // ("the same group of notes," per the human's framing) - a plain-text
   // section heading, not a result row, dividing it from the name matches
-  // above.
+  // above. Drawn before the name matches are, so that each section pages on
+  // its own and a long name list doesn't push this one out of reach.
   const related = relatedByMela(ragas, top, matches);
+  let heading = null;
   if (related.length > 0) {
-    const heading = document.createElement("li");
+    heading = document.createElement("li");
     heading.className = "search-related-heading";
     heading.textContent = `Related ragas - same parent scale as ${top.name} (${melaContext(top, melaNames)})`;
     searchResultsEl.appendChild(heading);
-    for (const raga of related) {
-      searchResultsEl.appendChild(renderRow(raga, null, empty, false, { loadable: true }));
-    }
+    appendPaged(searchResultsEl, related.map((raga) => () => renderRow(raga, null, empty, false, { loadable: true })),
+      "related ragas");
   }
+  appendPaged(searchResultsEl, matches.map((raga, i) => () => {
+    const badge = i === 0 && isClearMatch ? { text: "exact name", tier: "exact" } : null;
+    return renderRow(raga, badge, empty, Boolean(badge), { loadable: true });
+  }), "name matches", heading);
 }
 
 // --- Loading a found raga onto the keyboard -------------------------------
@@ -1545,7 +1605,7 @@ function chooseSuggestion(index) {
 }
 
 ragaSearchInput.addEventListener("input", () => {
-  performRagaSearch();
+  scheduleRagaSearch();
   const items = suggestionsForQuery();
   if (items.length > 0) openSuggestions(items);
   else closeSuggestions();
@@ -1566,6 +1626,7 @@ ragaSearchInput.addEventListener("keydown", (e) => {
       chooseSuggestion(activeSuggestion);
     } else {
       closeSuggestions(); // Enter with nothing highlighted just means "done typing"
+      if (searchTimer !== null) performRagaSearch(); // ...so don't make it wait out the delay
     }
   } else if (e.key === "Escape") {
     if (suggestionsOpen()) {
@@ -2639,6 +2700,10 @@ async function init() {
   }
   dataReady = true;
   renderResults();
+  // The matchers' per-raga sets and ordering (see prepare in ragas.js), built
+  // once the page has painted rather than on the first tap - where, with
+  // 6,000-odd ragas, it would read as the keyboard not responding.
+  (window.requestIdleCallback ?? ((f) => setTimeout(f, 0)))(() => prepareMatching(ragas));
   nameIndex = buildNameIndex(ragas);
   buildNameList();
   buildMelaChart();

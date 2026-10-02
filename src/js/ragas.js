@@ -78,13 +78,44 @@ function formNoteSet(form) {
 // exact, 1 for a partial - or null for no match. Forms are generated primary
 // first, so `>` rather than `>=` is what makes ties fall to the primary: a
 // raga that matches on its own stored scale is never reported as a variant hit.
-function bestForm(raga, evaluate) {
+function bestForm(entry, evaluate) {
   let best = null;
-  for (const form of ragaForms(raga)) {
-    const result = evaluate(form);
-    if (result && (!best || result.tier > best.tier)) best = { ...result, form };
+  for (const prepared of entry.forms) {
+    const result = evaluate(prepared);
+    if (result && (!best || result.tier > best.tier)) best = { ...result, form: prepared.form };
   }
   return best;
+}
+
+// Everything the matchers ask of a raga that doesn't depend on what was
+// pressed: its forms, each form's note sets and degree sequences, and the
+// corpus already in result order. Worked out once per raga list rather than
+// on every tap - at 6,000-odd ragas, rebuilding every set and re-sorting the
+// whole result list per keypress was a visible pause on a phone.
+//
+// Pre-sorting is what lets the matchers drop their own sorts: filtering an
+// ordered list keeps it ordered, and Array.prototype.sort is stable, so a
+// subset taken from it comes out exactly as sorting that subset would have.
+const preparedCache = new WeakMap();
+
+// Exported so app.js can do this while the page is idle after loading, rather
+// than making the first tap pay for it.
+export function prepare(ragas) {
+  let entries = preparedCache.get(ragas);
+  if (entries) return entries;
+  entries = [...ragas].sort(byMelakartaThenName).map((raga) => ({
+    raga,
+    forms: ragaForms(raga).map((form) => ({
+      form,
+      notes: formNoteSet(form),
+      aroSet: directionNoteSet(form.arohana),
+      avaSet: directionNoteSet(form.avarohana),
+      aroSeq: directionSequence(form.arohana),
+      avaSeq: directionSequence(form.avarohana),
+    })),
+  }));
+  preparedCache.set(ragas, entries);
+  return entries;
 }
 
 // One row per raga, never one row per variant - splitting them would
@@ -129,12 +160,17 @@ function annotateMatch(raga, best) {
 // Deshkar {Hindustani}. What it does *not* do is claim Mohanam is a more
 // important raga than Jaithshree in general - only that the source treats it
 // as more written-about, which is the best evidence available.
+// The same ordering as a.name.localeCompare(b.name), with the collator built
+// once. Chrome caches localeCompare's collator, but not every engine does, and
+// the corpus is sorted on phones running all three.
+const nameCollator = new Intl.Collator();
+
 function byMelakartaThenName(a, b) {
   return (
     Number(Boolean(b.is_melakarta)) - Number(Boolean(a.is_melakarta)) ||
     Number(a.tradition === "hindustani") - Number(b.tradition === "hindustani") ||
     Number(Boolean(b.article_url)) - Number(Boolean(a.article_url)) ||
-    a.name.localeCompare(b.name)
+    nameCollator.compare(a.name, b.name)
   );
 }
 
@@ -161,19 +197,17 @@ export function match(ragas, pressed) {
 
   const exact = [];
   const contains = [];
-  for (const raga of ragas) {
-    const best = bestForm(raga, (form) => {
-      const notes = formNoteSet(form);
+  for (const entry of prepare(ragas)) {
+    const best = bestForm(entry, (form) => {
+      const { notes } = form;
       if (setsEqual(notes, pressed)) return { tier: 2 };
       if (isSuperset(notes, pressed)) return { tier: 1 };
       return null;
     });
     if (!best) continue;
-    (best.tier === 2 ? exact : contains).push(annotateMatch(raga, best));
+    (best.tier === 2 ? exact : contains).push(annotateMatch(entry.raga, best));
   }
 
-  exact.sort(byMelakartaThenName);
-  contains.sort(byMelakartaThenName);
   return { exact, contains };
 }
 
@@ -192,10 +226,9 @@ export function matchSeparate(ragas, pressedArohana, pressedAvarohana) {
 
   const exact = [];
   const contains = [];
-  for (const raga of ragas) {
-    const best = bestForm(raga, (form) => {
-      const aroSet = directionNoteSet(form.arohana);
-      const avaSet = directionNoteSet(form.avarohana);
+  for (const entry of prepare(ragas)) {
+    const best = bestForm(entry, (form) => {
+      const { aroSet, avaSet } = form;
 
       const aroOk = !aroConstrained || isSuperset(aroSet, pressedArohana);
       const avaOk = !avaConstrained || isSuperset(avaSet, pressedAvarohana);
@@ -206,11 +239,9 @@ export function matchSeparate(ragas, pressedArohana, pressedAvarohana) {
       return { tier: aroExact && avaExact ? 2 : 1 };
     });
     if (!best) continue;
-    (best.tier === 2 ? exact : contains).push(annotateMatch(raga, best));
+    (best.tier === 2 ? exact : contains).push(annotateMatch(entry.raga, best));
   }
 
-  exact.sort(byMelakartaThenName);
-  contains.sort(byMelakartaThenName);
   return { exact, contains };
 }
 
@@ -250,10 +281,10 @@ export function matchOrdered(ragas, sequence, direction = "either") {
 
   const exact = [];
   const contains = [];
-  for (const raga of ragas) {
-    const best = bestForm(raga, (form) => {
-      const aroSeq = direction !== "avarohana" ? directionSequence(form.arohana) : null;
-      const avaSeq = direction !== "arohana" ? directionSequence(form.avarohana) : null;
+  for (const entry of prepare(ragas)) {
+    const best = bestForm(entry, (form) => {
+      const aroSeq = direction !== "avarohana" ? form.aroSeq : null;
+      const avaSeq = direction !== "arohana" ? form.avaSeq : null;
       const aroHit = aroSeq !== null && sequenceContainsRun(aroSeq, sequence);
       const avaHit = avaSeq !== null && sequenceContainsRun(avaSeq, sequence);
       if (!aroHit && !avaHit) return null;
@@ -266,11 +297,9 @@ export function matchOrdered(ragas, sequence, direction = "either") {
       };
     });
     if (!best) continue;
-    (best.tier === 2 ? exact : contains).push(annotateMatch(raga, best));
+    (best.tier === 2 ? exact : contains).push(annotateMatch(entry.raga, best));
   }
 
-  exact.sort(byMelakartaThenName);
-  contains.sort(byMelakartaThenName);
   return { exact, contains };
 }
 
@@ -289,10 +318,9 @@ export function matchOrderedSeparate(ragas, aroSequence, avaSequence) {
 
   const exact = [];
   const contains = [];
-  for (const raga of ragas) {
-    const best = bestForm(raga, (form) => {
-      const aroSeq = directionSequence(form.arohana);
-      const avaSeq = directionSequence(form.avarohana);
+  for (const entry of prepare(ragas)) {
+    const best = bestForm(entry, (form) => {
+      const { aroSeq, avaSeq } = form;
 
       const aroOk = !aroConstrained || sequenceContainsRun(aroSeq, aroSequence);
       const avaOk = !avaConstrained || sequenceContainsRun(avaSeq, avaSequence);
@@ -306,11 +334,9 @@ export function matchOrderedSeparate(ragas, aroSequence, avaSequence) {
       };
     });
     if (!best) continue;
-    (best.tier === 2 ? exact : contains).push(annotateMatch(raga, best));
+    (best.tier === 2 ? exact : contains).push(annotateMatch(entry.raga, best));
   }
 
-  exact.sort(byMelakartaThenName);
-  contains.sort(byMelakartaThenName);
   return { exact, contains };
 }
 

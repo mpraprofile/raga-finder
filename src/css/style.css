@@ -411,6 +411,13 @@ h1 {
   padding: 0.5rem 0.6rem;
   border-radius: 6px;
   cursor: pointer;
+  /* The arrow opens all 5,700-odd names in a 320px box. Laying every row out
+     to show the dozen that fit took half a second on a laptop; this lets the
+     browser skip the rows scrolled out of view. `auto` remembers each row's
+     real height once it has been drawn, so a wrapped row doesn't make the
+     scrollbar jump, and scrollIntoView still finds any row by keyboard. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 3.5rem; /* a one-line row, measured */
 }
 
 /* One wrapper so .suggestion keeps exactly two children and space-between goes
@@ -2421,6 +2428,33 @@ h1 {
   color: var(--match-fg);
   border-radius: 3px;
   padding: 0 0.2rem;
+}
+
+/* The foot of a paged result list (see appendPaged in app.js). Full width and
+   comfortably tall: it is the only way to the rest of the list, and on a phone
+   it is reached with a thumb at the bottom of a long scroll. */
+.show-more {
+  padding: 0.8rem 0;
+}
+
+.show-more-btn {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.5rem 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--card-border) 35%, var(--accent) 65%);
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.show-more-btn:hover {
+  background: var(--accent);
+  color: canvas;
 }
 
 .empty {
