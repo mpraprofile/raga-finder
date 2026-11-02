@@ -471,6 +471,54 @@ h1 {
   margin-top: 0.5rem;
 }
 
+/* The A-to-Z list an empty search shows: it is the first thing on the page,
+   so no rule above it. */
+.all-ragas-heading {
+  border-top: none;
+  margin-top: 0;
+}
+
+/* Letter buttons that jump the A-to-Z list. They wrap onto as many lines as
+   the screen needs rather than scrolling sideways. */
+.alpha-index {
+  list-style: none;
+  padding: 0 0.5rem 0.6rem;
+}
+.alpha-index nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.alpha-btn {
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  min-width: 2.2rem;
+  min-height: 2.2rem;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.alpha-btn:hover {
+  border-color: var(--accent);
+}
+.alpha-btn[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: canvas;
+}
+
+/* A row's place in the A-to-Z list, ahead of its name. */
+.row-number {
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  opacity: 0.6;
+  margin-right: 0.4rem;
+}
+
 .controls-row {
   display: flex;
   flex-wrap: wrap;

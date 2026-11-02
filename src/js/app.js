@@ -1068,7 +1068,7 @@ function scaleHtml(notes, matchedDegrees) {
 // search passes it (see loadRagaIntoKeyboard) - in the note-based results the
 // selection is the thing you just built by hand, and a button that silently
 // replaced it with a neighbouring raga's scale would be a trap.
-function renderRow(raga, badge, matched, tint = Boolean(badge && badge.tier === "exact"), { loadable = false } = {}) {
+function renderRow(raga, badge, matched, tint = Boolean(badge && badge.tier === "exact"), { loadable = false, number = null } = {}) {
   const li = document.createElement("li");
   li.className = "result-row" + (tint ? " exact" : "");
 
@@ -1105,6 +1105,14 @@ function renderRow(raga, badge, matched, tint = Boolean(badge && badge.tier === 
   // Both remain real <a href>s rather than click handlers, which is what keeps
   // middle-click, "copy link address" and link semantics for a screen reader,
   // and keeps the router the only thing deciding what a hash means.
+  // The A-to-Z list numbers its rows (its place in the whole list, not in the
+  // page drawn so far), so a reader can say "number 412" and find it again.
+  if (number !== null) {
+    const num = document.createElement("span");
+    num.className = "row-number";
+    num.textContent = `${number}.`;
+    name.appendChild(num);
+  }
   const nameLink = document.createElement("a");
   nameLink.className = "raga-name-link";
   nameLink.href = ragaHref(raga);
@@ -1293,9 +1301,12 @@ function performRagaSearch() {
   searchResultsEl.innerHTML = "";
 
   const query = ragaSearchInput.value;
-  // An empty query leaves an empty list, and nothing else: the input's
-  // placeholder is the only instruction this view needs.
-  if (!query.trim()) return;
+  // An empty query shows every raga, A to Z and numbered - a page that opens
+  // on nothing gave no sense of what is in here (user request, 2026-11-01).
+  if (!query.trim()) {
+    renderAllRagas();
+    return;
+  }
 
   const matches = matchesFor(query);
   if (matches.length === 0) {
@@ -1330,6 +1341,70 @@ function performRagaSearch() {
     const badge = i === 0 && isClearMatch ? { text: "exact name", tier: "exact" } : null;
     return renderRow(raga, badge, empty, Boolean(badge), { loadable: true });
   }), "name matches", heading);
+}
+
+// --- The A-to-Z list (empty query) ----------------------------------------
+// Sorted on the name with its diacritics folded away, so Ṭōḍi files under T
+// with Todi rather than after Z. Built once per load; numbers are the row's
+// place in this whole list.
+let alphabetical = null;
+let alphaStart = "";      // the letter the list was jumped to, "" for the top
+
+// A leading bracket is a qualifier ("(Karnataka) Sudda"), not where the name
+// files - it would otherwise sort every such name ahead of A.
+function alphaKey(name) {
+  return name.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase()
+    .replace(/^\([^)]*\)\s*/, "").replace(/^[^\p{L}]+/u, "");
+}
+
+function alphabeticalRagas() {
+  if (!alphabetical) {
+    alphabetical = ragas
+      .map((raga) => ({ raga, key: alphaKey(raga.name) }))
+      .sort((a, b) => a.key.localeCompare(b.key) || a.raga.mela - b.raga.mela)
+      .map((entry, i) => ({ ...entry, number: i + 1, letter: entry.key[0]?.toUpperCase() || "#" }));
+  }
+  return alphabetical;
+}
+
+function renderAllRagas() {
+  if (!ragas.length) return; // still loading; called again once the data lands
+  const all = alphabeticalRagas();
+  const empty = noMatchedSets();
+
+  const heading = document.createElement("li");
+  heading.className = "search-related-heading all-ragas-heading";
+  heading.textContent = `All ${all.length.toLocaleString()} ragas, A to Z`;
+  searchResultsEl.appendChild(heading);
+
+  // Letter buttons, for a list too long to page through from the top. A jump
+  // shows the list from that letter on; numbers stay those of the whole list.
+  const index = document.createElement("li");
+  index.className = "alpha-index";
+  const nav = document.createElement("nav");
+  nav.setAttribute("aria-label", "Jump to letter");
+  const letters = [...new Set(all.map((e) => e.letter))];
+  for (const letter of ["", ...letters]) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "alpha-btn";
+    btn.textContent = letter || "All";
+    btn.setAttribute("aria-pressed", String(letter === alphaStart));
+    btn.addEventListener("click", () => {
+      alphaStart = letter;
+      performRagaSearch();
+      searchResultsEl.querySelector(`.alpha-btn[aria-pressed="true"]`)?.focus({ preventScroll: true });
+    });
+    nav.appendChild(btn);
+  }
+  index.appendChild(nav);
+  searchResultsEl.appendChild(index);
+
+  const from = alphaStart ? all.findIndex((e) => e.letter === alphaStart) : 0;
+  const shown = from < 0 ? all : all.slice(from);
+  appendPaged(searchResultsEl,
+    shown.map((e) => () => renderRow(e.raga, null, empty, false, { loadable: true, number: e.number })),
+    "ragas");
 }
 
 // --- Loading a found raga onto the keyboard -------------------------------
@@ -2706,6 +2781,7 @@ async function init() {
   (window.requestIdleCallback ?? ((f) => setTimeout(f, 0)))(() => prepareMatching(ragas));
   nameIndex = buildNameIndex(ragas);
   buildNameList();
+  performRagaSearch(); // the search view's A-to-Z list needs the data too
   buildMelaChart();
   // Now the route can actually be answered. A no-op for the ordinary load
   // (the finder is already showing); for `#raga/mohanam` it is what replaces
