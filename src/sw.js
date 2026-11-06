@@ -10,7 +10,7 @@
 // out of. Network-first means anyone with connectivity always gets
 // current content; the cache exists purely for when they don't have any.
 
-const CACHE_NAME = "raga-finder-v12"; // bump whenever the precache list below changes
+const CACHE_NAME = "raga-finder-v13"; // bump whenever the precache list below changes
 
 const PRECACHE_URLS = [
   "./index.html",
@@ -19,6 +19,7 @@ const PRECACHE_URLS = [
   "./js/app.js",
   "./js/ragas.js",
   "./js/audio.js",
+  "./js/scheduler.js", // look-ahead note timing for audio.js (specs/09)
   "./js/notation.js",
   "./js/melakarta.js",
   "./js/mela-chart.js",

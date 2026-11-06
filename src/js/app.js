@@ -20,6 +20,7 @@ import {
   prepare as prepareMatching,
 } from "./ragas.js";
 import { playPianoTone, setMuted } from "./audio.js";
+import { playSequence } from "./scheduler.js";
 import { REFERENCE_ROWS, referenceRowCode, noteLabel, degreeOf } from "./notation.js";
 import { checkAgainstStored } from "./melakarta.js";
 import { mountMelaChart, renderKatapayadiReference } from "./mela-chart.js";
@@ -62,12 +63,13 @@ const TEMPO_LABELS = { 0.5: "½x" };
 const tempoLabel = (rate) => TEMPO_LABELS[rate] ?? `${rate}x`;
 let playbackTempo = 1;
 
-function noteGap() {
-  return NOTE_GAP_MS / playbackTempo;
+// In seconds, because the scheduler lays notes on the audio clock.
+function noteGapSeconds() {
+  return NOTE_GAP_MS / playbackTempo / 1000;
 }
 
-function loopEndDelay() {
-  return LOOP_END_DELAY_MS / playbackTempo;
+function loopEndDelaySeconds() {
+  return LOOP_END_DELAY_MS / playbackTempo / 1000;
 }
 
 // Four copies of this control exist at once - one beside each of the three Loop
@@ -2066,10 +2068,13 @@ function makePlayer({ buildSequence, buttonEls, getLoop, onStart, onStop, render
   const els = Array.isArray(buttonEls) ? buttonEls : [buttonEls];
   let playing = false;
   let token = 0;
+  let pass = null; // the running scheduler pass, if any
 
   function stop() {
     token++;
     playing = false;
+    if (pass) pass.cancel();
+    pass = null;
     if (onStop) onStop();
     els.forEach((el) => renderState(el, false));
   }
@@ -2082,25 +2087,16 @@ function makePlayer({ buildSequence, buttonEls, getLoop, onStart, onStop, render
     playing = true;
     els.forEach((el) => renderState(el, true));
     const myToken = ++token;
-    let i = 0;
-
-    function step() {
-      if (myToken !== token) return;
-      if (i >= sequence.length) {
-        if (!getLoop()) {
-          stop();
-          return;
-        }
-        i = 0;
-        setTimeout(step, loopEndDelay()); // pause at the loop boundary before the pass repeats
-        return;
-      }
-      playPianoTone(sequence[i]);
-      const atTurnaround = i === pauseAfterIndex;
-      i++;
-      setTimeout(step, atTurnaround ? loopEndDelay() : noteGap());
-    }
-    step();
+    pass = playSequence({
+      sequence,
+      pauseAfterIndex,
+      gap: noteGapSeconds,
+      turnaround: loopEndDelaySeconds,
+      loop: getLoop,
+      onEnd: () => {
+        if (myToken === token) stop();
+      },
+    });
   }
 
   els.forEach((el) =>
@@ -2251,14 +2247,14 @@ function stopActiveRowPreview() {
 // match. It can't use makePlayer: that binds Play/Stop state to a button
 // element, and this one is destroyed and rebuilt on every renderInputs() -
 // so instead it's a plain one-shot pass over the raga's own scale, arohana
-// then avarohana with the usual turnaround pause, cancelled by token the
-// same way makePlayer cancels its own timer chain. Folded into
-// stopActiveRowPreview above so every existing "stop whatever's playing"
-// call site already covers it.
-let scalePreviewToken = 0;
+// then avarohana with the usual turnaround pause, cancelled the same way
+// makePlayer cancels its own pass. Folded into stopActiveRowPreview above so
+// every existing "stop whatever's playing" call site already covers it.
+let scalePreview = null;
 
 function stopScalePreview() {
-  scalePreviewToken++;
+  if (scalePreview) scalePreview.cancel();
+  scalePreview = null;
 }
 
 // A found raga's own scale, as pitches: arohana then avarohana, with the
@@ -2319,16 +2315,7 @@ function playScaleOnce(raga, list = null) {
   stopAllSeparatePlayers();
 
   const { sequence, pauseAfterIndex } = list ? ragaSequenceAtTonic(raga, list) : ragaSequenceInKey(raga);
-  const myToken = ++scalePreviewToken;
-  let i = 0;
-
-  (function step() {
-    if (myToken !== scalePreviewToken || i >= sequence.length) return;
-    playPianoTone(sequence[i]);
-    const atTurnaround = i === pauseAfterIndex;
-    i++;
-    setTimeout(step, atTurnaround ? loopEndDelay() : noteGap());
-  })();
+  scalePreview = playSequence({ sequence, pauseAfterIndex, gap: noteGapSeconds, turnaround: loopEndDelaySeconds });
 }
 
 resetBtn.addEventListener("click", () => {
