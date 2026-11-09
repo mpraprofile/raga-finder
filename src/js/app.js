@@ -19,9 +19,9 @@ import {
   ragaForms,
   prepare as prepareMatching,
 } from "./ragas.js";
-import { playPianoTone, setMuted } from "./audio.js";
+import { getSoundSettings, isDroneOn, playPianoTone, setDroneOn, setDroneTonic, setMuted, setSoundSettings } from "./audio.js";
 import { playSequence } from "./scheduler.js";
-import { REFERENCE_ROWS, referenceRowCode, noteLabel, degreeOf } from "./notation.js";
+import { REFERENCE_ROWS, referenceRowCode, noteLabel, degreeOf, labelForDegree } from "./notation.js";
 import { checkAgainstStored } from "./melakarta.js";
 import { mountMelaChart, renderKatapayadiReference } from "./mela-chart.js";
 import { ragaHref, janyaUnit, renderRagaPage, renderRagaNotFound, renderRagaLoading } from "./raga-page.js";
@@ -107,6 +107,9 @@ const ICON_UNMUTED =
   '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M3 10v4h4l5 5V5L7 10H3z"/><path d="M14.5 6.09v1.86c1.6.87 2.5 2.28 2.5 4.05s-.9 3.18-2.5 4.05v1.86c2.89-.86 5-3.54 5-6.91s-2.11-6.05-5-6.91z"/></svg>';
 const ICON_MUTED =
   '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M3 10v4h4l5 5V5L7 10H3z"/><path d="M19.5 12l2.1-2.1-1.1-1.1L18.4 10.9l-2.1-2.1-1.1 1.1 2.1 2.1-2.1 2.1 1.1 1.1 2.1-2.1 2.1 2.1 1.1-1.1z"/></svg>';
+// Three strings of differing length - the tanpura, as plainly as 16px allows.
+const ICON_DRONE =
+  '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M7 4v16M12 2v20M17 4v16"/></svg>';
 const ICON_PLAY = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15l13-7.5-13-7.5z"/></svg>';
 const ICON_STOP = '<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>';
 
@@ -177,6 +180,7 @@ const arohanaSel = [];
 const avarohanaSel = [];
 
 const muteBtn = document.getElementById("mute-btn");
+const droneBtn = document.getElementById("drone-btn");
 const combinedBlock = document.getElementById("combined-block");
 const combinedContainer = document.getElementById("combined-input");
 const separateContainer = document.getElementById("separate-inputs");
@@ -493,8 +497,11 @@ function transposeSelection(which, direction) {
     state.offset = normaliseOffset(state.offset + tonic);
   }
 
-  if (which === "combined") restartIfPlaying(combinedPlayer);
-  else restartSeparatePlayers();
+  // Playback carries on from the next swara of the shifted scale rather than
+  // starting over from its Sa (user, 2026-11-09): a shift is a step within
+  // the music, not a new piece.
+  if (which === "combined") continueIfPlaying(combinedPlayer);
+  else [arohanaSoloPlayer, avarohanaSoloPlayer, jointPlayer].forEach(continueIfPlaying);
   renderInputs();
   renderResults();
 }
@@ -526,16 +533,161 @@ function wireTransposeRow(which) {
 // number is the clearest way to say "not transposed".
 function renderTransposeRow(which) {
   const { steps } = transposeState[which];
-  const available = !inFreePlayMode() && !(which === "avarohana" && layoutMode === "separate" && transposeBoth);
+  // Avarohana's row is not greyed but gone while "Shift both" is on: Arohana's
+  // row shifts both, and a disabled copy only took up room (user, 2026-11-09).
+  // Not tied to the layout: in the combined layout the whole Avarohana block is
+  // hidden anyway, and keeping the row's state steady means switching layouts
+  // never animates it.
+  const drivenByArohana = which === "avarohana" && transposeBoth;
+  fadeHidden(document.getElementById(`${which}-transpose`), drivenByArohana);
+  const available = !inFreePlayMode() && !drivenByArohana;
   const canTranspose = available && new Set(listFor(which).map((d) => d % 12)).size >= 2;
 
   setControlEnabled(document.getElementById(`${which}-transpose-down`), canTranspose);
   setControlEnabled(document.getElementById(`${which}-transpose-up`), canTranspose);
-  setControlEnabled(document.getElementById(`${which}-transpose-reset`), available && steps !== 0);
+  // "Set as 0" only means something once there is a shift to reset: otherwise
+  // it fades away in its own column, so nothing beside it moves (user,
+  // 2026-11-09), rather than sitting there greyed.
+  const reset = document.getElementById(`${which}-transpose-reset`);
+  const canReset = available && steps !== 0;
+  setControlEnabled(reset, canReset);
+  reset.classList.toggle("faded-out", !canReset);
 
   document.getElementById(`${which}-transpose-count-down`).textContent = steps < 0 ? String(steps) : "";
   document.getElementById(`${which}-transpose-count-up`).textContent = steps > 0 ? `+${steps}` : "";
   document.getElementById(`${which}-transpose`).classList.toggle("control-disabled", !available);
+}
+
+// Hides or shows `el` with the same 0.35 s fade as the Tanpura switch beside
+// Tonic shift. Unlike that switch, these controls give their room back - and
+// smoothly (user, 2026-11-09: the jump of everything below was "not smooth"):
+// hiding fades out, then shrinks the element's height, padding and margins to
+// nothing so what follows glides up, then sets `hidden`; showing grows it back
+// from nothing, then fades it in. A change of mind mid-way wins: each run holds
+// a token, and a newer call cancels the older's animations.
+const FADE_MS = 350;
+const COLLAPSE_MS = 300;
+
+function boxAnimation(el, opening) {
+  const cs = getComputedStyle(el);
+  const full = {
+    height: `${el.getBoundingClientRect().height}px`,
+    paddingTop: cs.paddingTop,
+    paddingBottom: cs.paddingBottom,
+    marginTop: cs.marginTop,
+    marginBottom: cs.marginBottom,
+  };
+  const none = { height: "0px", paddingTop: "0px", paddingBottom: "0px", marginTop: "0px", marginBottom: "0px" };
+  el.style.overflow = "hidden";
+  // A collapse holds its end (fill) until the caller has set `hidden`, so the
+  // element never springs back to full size for a frame in between.
+  return el.animate(opening ? [none, full] : [full, none], { duration: COLLAPSE_MS, easing: "ease-in-out", fill: opening ? "none" : "forwards" });
+}
+
+function waitMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fadeHidden(el, hide) {
+  const instant = !document.body.classList.contains("fades-ready") || el.parentElement?.closest("[hidden]");
+  const wanted = hide ? "hidden" : "shown";
+  if (el._fadeWanted === wanted && !instant) return; // already heading there
+  const token = (el._fadeToken ?? 0) + 1;
+  el._fadeToken = token;
+  el._fadeWanted = wanted;
+  el.getAnimations().forEach((a) => a.cancel());
+  const current = () => el._fadeToken === token;
+
+  if (instant) {
+    el.classList.remove("fading-out");
+    el.style.overflow = "";
+    el.hidden = hide;
+    return;
+  }
+  try {
+    if (hide) {
+      if (el.hidden) return;
+      el.classList.add("fading-out");
+      await waitMs(FADE_MS);
+      if (!current()) return;
+      const collapse = boxAnimation(el, false);
+      await collapse.finished;
+      if (!current()) return;
+      el.hidden = true;
+      collapse.cancel();
+      el.style.overflow = "";
+    } else {
+      if (!el.hidden && !el.classList.contains("fading-out")) return;
+      el.classList.add("fading-out");
+      if (el.hidden) {
+        el.hidden = false;
+        await boxAnimation(el, true).finished;
+        el.style.overflow = "";
+        if (!current()) return;
+      }
+      el.classList.remove("fading-out");
+    }
+  } catch {
+    // An animation cancelled by a newer call; that call now owns the element.
+    el.style.overflow = "";
+  }
+}
+
+// Swaps one block for another (the Combined / Separate layouts) the same way:
+// the old fades out, the space eases from its height to the new one's while
+// the new is still transparent, then the new fades in - so the results below
+// glide rather than jump. Rendering never depends on visibility, so the new
+// block can be drawn into while hidden. A newer swap cancels an older one.
+let swapToken = 0;
+// The room a block really takes, from its top margin to whatever follows it -
+// measured on the page rather than added up, because a child's margin can
+// collapse through the block's edge and count for nothing in its own box.
+function roomTaken(el, follower) {
+  const cs = getComputedStyle(el);
+  const top = el.getBoundingClientRect().top - parseFloat(cs.marginTop);
+  if (follower) return follower.getBoundingClientRect().top - top;
+  return el.getBoundingClientRect().height + parseFloat(cs.marginTop) + parseFloat(cs.marginBottom);
+}
+async function smoothSwap(fromEl, toEl) {
+  const token = ++swapToken;
+  // What follows both blocks: the yardstick for the room each one takes.
+  const follower = [fromEl, toEl].includes(separateContainer) ? separateContainer.nextElementSibling : null;
+  const current = () => swapToken === token;
+  [fromEl, toEl].forEach((el) => el.getAnimations().forEach((a) => a.cancel()));
+  const instant = !document.body.classList.contains("fades-ready") || mainView.hidden;
+  if (instant || (fromEl.hidden && !toEl.hidden && !toEl.classList.contains("fading-out"))) {
+    fromEl.classList.remove("fading-out");
+    toEl.classList.remove("fading-out");
+    fromEl.hidden = true;
+    toEl.hidden = false;
+    return;
+  }
+  try {
+    let fromHeight = 0;
+    if (!fromEl.hidden) {
+      fromEl.classList.add("fading-out");
+      await waitMs(FADE_MS);
+      if (!current()) return;
+      fromHeight = roomTaken(fromEl, follower);
+      fromEl.hidden = true;
+      fromEl.classList.remove("fading-out");
+    }
+    toEl.classList.add("fading-out");
+    toEl.hidden = false;
+    // Room compared to room (margins, and any margin collapsing through the
+    // edge, included): comparing box heights made the page dip and overshoot.
+    // Overflow is clipped before measuring, as it will be while animating.
+    toEl.style.overflow = "hidden";
+    const toHeight = toEl.getBoundingClientRect().height;
+    const toMargins = roomTaken(toEl, follower) - toHeight;
+    const startHeight = Math.max(0, fromHeight - toMargins);
+    await toEl.animate([{ height: `${startHeight}px` }, { height: `${toHeight}px` }], { duration: COLLAPSE_MS, easing: "ease-in-out" }).finished;
+    toEl.style.overflow = "";
+    if (!current()) return;
+    toEl.classList.remove("fading-out");
+  } catch {
+    toEl.style.overflow = "";
+  }
 }
 
 function renderTransposeRows() {
@@ -571,6 +723,7 @@ function trayEditingProps(list, restart) {
 function renderInputs() {
   const renderer = INPUT_RENDERERS[inputStyle];
   renderTransposeRows();
+  syncDroneTonic(); // every Key change, tonic shift and layout switch passes through here
 
   if (layoutMode === "combined" || inFreePlayMode()) {
     renderer.render(combinedContainer, {
@@ -890,10 +1043,10 @@ function renderResults() {
 
   if (!hasSelection()) {
     promptEl.textContent = EMPTY_PROMPT;
-    promptEl.hidden = false;
+    fadeHidden(promptEl, false);
     return;
   }
-  promptEl.hidden = true;
+  fadeHidden(promptEl, true);
 
   const { exact, contains, exactKind } = currentMatches();
 
@@ -940,10 +1093,10 @@ function countsRow(exactCount, containsCount) {
 function renderOrderedResults() {
   if (!hasSelection()) {
     promptEl.textContent = EMPTY_PROMPT;
-    promptEl.hidden = false;
+    fadeHidden(promptEl, false);
     return;
   }
-  promptEl.hidden = true;
+  fadeHidden(promptEl, true);
 
   const { exact, contains } = currentMatches();
 
@@ -1800,6 +1953,7 @@ function showView(name) {
   stopAllPlayback();
   closeSuggestions(); // positioned against the search input, which may be on its way out
   for (const [key, el] of Object.entries(VIEWS)) el().hidden = key !== name;
+  syncDroneTonic(); // the raga page plays from the Key alone; the Scale page adds its shift
   // Belt and braces with the `aspect-ratio` in style.css, against the same
   // iOS failure: the chart is built during init(), while this view is still
   // hidden, so its one and only layout happened inside a display:none subtree.
@@ -1978,6 +2132,31 @@ searchBackBtn.addEventListener("click", () => navigate(""));
 settingsOpenBtn.addEventListener("click", () => navigate("#reference"));
 settingsBackBtn.addEventListener("click", () => navigate(""));
 
+// Settings: the panel of fine controls (once the open "Controls" box) behind
+// the gear at the top right. It opens under the header, pushing the page down
+// rather than covering it, so a change can be heard against the scale below.
+const controlsPanel = document.getElementById("controls-panel");
+const controlsOpenBtn = document.getElementById("controls-open-btn");
+const controlsCloseBtn = document.getElementById("controls-close-btn");
+let controlsOpen = false; // its own state: mid-fade, `hidden` doesn't say yet
+function setControlsOpen(open) {
+  controlsOpen = open;
+  fadeHidden(controlsPanel, !open);
+  controlsOpenBtn.setAttribute("aria-expanded", String(open));
+  controlsOpenBtn.classList.toggle("active", open);
+}
+controlsOpenBtn.addEventListener("click", () => setControlsOpen(!controlsOpen));
+controlsCloseBtn.addEventListener("click", () => {
+  setControlsOpen(false);
+  controlsOpenBtn.focus();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && controlsOpen && !mainView.hidden) {
+    setControlsOpen(false);
+    controlsOpenBtn.focus();
+  }
+});
+
 // Back out of a raga page the way the reader came in. history.back() is right
 // for the ordinary case - you followed a link from a result list and want that
 // list, scrolled where you left it. It is wrong for the case this route exists
@@ -2079,7 +2258,9 @@ function makePlayer({ buildSequence, buttonEls, getLoop, onStart, onStop, render
     els.forEach((el) => renderState(el, false));
   }
 
-  function start() {
+  // `from` (optional) resumes at a place in the sequence - its index and the
+  // audio time it was due - instead of from the top.
+  function start(from = null) {
     const { sequence, pauseAfterIndex } = buildSequence();
     if (sequence.length === 0) return;
     if (onStart) onStart();
@@ -2090,6 +2271,8 @@ function makePlayer({ buildSequence, buttonEls, getLoop, onStart, onStop, render
     pass = playSequence({
       sequence,
       pauseAfterIndex,
+      startIndex: from ? Math.min(from.index, sequence.length) : 0,
+      startAt: from ? from.when : null,
       gap: noteGapSeconds,
       turnaround: loopEndDelaySeconds,
       loop: getLoop,
@@ -2106,7 +2289,22 @@ function makePlayer({ buildSequence, buttonEls, getLoop, onStart, onStop, render
     }),
   );
   els.forEach((el) => renderState(el, false)); // icon+color from the start, not just after first click
-  return { start, stop, isPlaying: () => playing };
+  // Rebuilds the sequence and carries on where the old one was: the first note
+  // not yet sounding plays next, at the time it was due.
+  function carryOn() {
+    if (!playing || !pass) return;
+    const from = pass.position();
+    token++;
+    pass.cancel();
+    pass = null;
+    start(from);
+  }
+
+  return { start, stop, carryOn, isPlaying: () => playing };
+}
+
+function continueIfPlaying(player) {
+  if (player.isPlaying()) player.carryOn();
 }
 
 // Keeps a running Play in sync with live edits - adding/removing a note,
@@ -2381,10 +2579,14 @@ function updateControlAvailability() {
   setControlEnabled(playBothLabel, separate && !muted);
   setControlEnabled(transposeBothLabel, separate);
 
+  setControlEnabled(droneBtn, !muted); // audio.js silences the drone while muted; the button says so
   setControlEnabled(combinedControls, !muted && !free);
   setControlEnabled(arohanaControls, !muted && !free);
-  // Avarohana's Play/Loop is driven by Arohana's while "Play both" is on -
-  // its own buttons would be a second handle on the same single sequence.
+  // Avarohana's Play/Loop/Tempo is driven by Arohana's while "Play both" is on -
+  // its own would be a second handle on the same single sequence - so it is
+  // hidden then rather than greyed (user, 2026-11-09: greyed controls "taking
+  // up screen real estate unnecessarily").
+  fadeHidden(avarohanaControls, playBothToggle.checked);
   setControlEnabled(avarohanaControls, !muted && !free && !playBothToggle.checked);
   setControlEnabled(resetBtn, !free);
   setControlEnabled(arohanaResetBtn, !free);
@@ -2398,7 +2600,7 @@ function updateControlAvailability() {
 // pass that does the real work.
 function updateControlVisibility() {
   document.body.classList.toggle("free-play-mode", inFreePlayMode());
-  combinedTitle.textContent = inFreePlayMode() ? "Piano" : "Scale";
+  combinedTitle.textContent = inFreePlayMode() ? "Piano" : "Swara input";
   updateControlAvailability();
 }
 
@@ -2413,6 +2615,118 @@ muteBtn.addEventListener("click", () => {
   muted = !muted;
   applyMuted();
 });
+
+// --- Tanpura (specs/09 Phase 2) --------------------------------------------
+// The Drone button is the on/off; the Tanpura group in the Controls panel says
+// how it is tuned. Both write straight through to audio.js, which owns the
+// sound and keeps the settings. Not stopped by stopAllPlayback(): the drone is
+// not a phrase being played, it is the floor the phrases stand on.
+// The Tanpura switch beside each Tonic shift only means something when the
+// tanpura can sound: the Tanpura button on, or "Tanpura under raga playback"
+// on. Otherwise it fades out, keeping its place so nothing around it moves
+// (user, 2026-11-09).
+function syncDroneFollowVisibility() {
+  const relevant = isDroneOn() || getSoundSettings().droneUnderPlayback;
+  for (const set of document.querySelectorAll(".drone-follow-set")) {
+    set.classList.toggle("faded-out", !relevant);
+    set.inert = !relevant;
+  }
+}
+
+function renderDroneButton() {
+  syncDroneFollowVisibility();
+  const on = isDroneOn();
+  droneBtn.innerHTML = `${ICON_DRONE}<span>${on ? "Tanpura on" : "Tanpura"}</span>`; // "Tanpura", as the user names it (2026-11-09)
+  droneBtn.setAttribute("aria-pressed", String(on));
+  droneBtn.classList.toggle("active", on);
+}
+
+droneBtn.addEventListener("click", () => {
+  setDroneOn(!isDroneOn());
+  renderDroneButton();
+});
+
+// The drone sits on the Key's Sa. A gṛha bhēdam shift moves the scale's Sa, but
+// a tanpura normally stays where it was tuned - hearing the shifted scale
+// against the original Sa is the point of the exercise - so the drone follows
+// the shift only when "Follow tonic shift" is on, and only on the Scale page,
+// where the shift applies (raga pages and results play from the Key alone).
+function droneTonic() {
+  if (mainView.hidden || !getSoundSettings().droneFollowsShift) return keySemitone;
+  return saOffsetFor(layoutMode === "separate" && !inFreePlayMode() ? "arohana" : "combined");
+}
+
+function syncDroneTonic() {
+  setDroneTonic(droneTonic());
+}
+
+// The follow switch beside each Tonic shift row: three views of one setting,
+// like the tempo pills, headed "Tanpura" the way they are headed "Tempo". Its
+// text says what happens now - "Original Sa" while the drone holds the Key's
+// Sa, "New Sa" while it moves with the shift.
+function syncDroneFollow() {
+  const follows = getSoundSettings().droneFollowsShift;
+  for (const box of document.querySelectorAll("input[data-drone-follow]")) {
+    box.checked = follows;
+    box.closest(".drone-follow").querySelector(".drone-follow-text").textContent =
+      follows ? "New Sa" : "Original Sa"; // the slot in style.css is sized to the longer
+  }
+}
+
+// The two Ni first strings are named in the user's own numbering - N1/N2 under
+// the default convention, N2/N3 under the mainstream one - so they read the
+// way every other Ni in the app does. Re-run when that preference changes.
+function labelDroneNishadas() {
+  const code = (degree) => labelForDegree(degree, labelPrefs).split("/").pop();
+  const select = document.getElementById("drone-first");
+  select.querySelector('option[value="ni-kaisiki"]').textContent = code(10);
+  select.querySelector('option[value="ni"]').textContent = code(11);
+}
+
+function initDroneControls() {
+  const settings = getSoundSettings();
+  const first = document.getElementById("drone-first");
+  const level = document.getElementById("drone-level");
+  const under = document.getElementById("drone-under-playback");
+  first.value = settings.droneFirst;
+  level.value = String(settings.droneLevel);
+  under.checked = settings.droneUnderPlayback;
+  const style = settings.droneStyle === "hum" ? "soft" : settings.droneStyle; // the old name for Soft
+  for (const radio of document.querySelectorAll('input[name="drone-style"]')) {
+    radio.checked = radio.value === style;
+    radio.addEventListener("change", (e) => {
+      if (e.target.checked) setSoundSettings({ droneStyle: e.target.value });
+    });
+  }
+  first.addEventListener("change", () => setSoundSettings({ droneFirst: first.value }));
+  level.addEventListener("input", () => setSoundSettings({ droneLevel: Number(level.value) }));
+  under.addEventListener("change", () => {
+    setSoundSettings({ droneUnderPlayback: under.checked });
+    syncDroneFollowVisibility();
+  });
+  const octave = document.getElementById("drone-octave");
+  octave.value = String(settings.droneOctave);
+  octave.addEventListener("input", () => setSoundSettings({ droneOctave: Number(octave.value) }));
+  const swish = document.getElementById("drone-swish");
+  swish.value = String(settings.droneSwish);
+  swish.addEventListener("input", () => setSoundSettings({ droneSwish: Number(swish.value) }));
+  const lowSa = document.getElementById("drone-low-sa");
+  lowSa.checked = settings.droneLowSa;
+  lowSa.addEventListener("change", () => setSoundSettings({ droneLowSa: lowSa.checked }));
+  const pad = document.getElementById("drone-pad");
+  pad.value = String(settings.dronePadLevel);
+  pad.addEventListener("input", () => setSoundSettings({ dronePadLevel: Number(pad.value) }));
+  labelDroneNishadas();
+  for (const box of document.querySelectorAll("input[data-drone-follow]")) {
+    box.addEventListener("change", () => {
+      setSoundSettings({ droneFollowsShift: box.checked });
+      syncDroneFollow();
+      syncDroneTonic();
+    });
+  }
+  syncDroneFollow();
+  renderDroneButton();
+}
 
 // --- Mode controls -----------------------------------------------------
 
@@ -2435,8 +2749,8 @@ document.querySelectorAll('input[name="input-style"]').forEach((radio) => {
 // free play returns to whichever layout was in use.
 function updateLayoutVisibility() {
   const free = inFreePlayMode();
-  combinedBlock.hidden = !free && layoutMode !== "combined";
-  separateContainer.hidden = free || layoutMode !== "separate";
+  const showCombined = free || layoutMode === "combined";
+  smoothSwap(showCombined ? separateContainer : combinedBlock, showCombined ? combinedBlock : separateContainer);
   updateControlVisibility();
 }
 
@@ -2532,6 +2846,7 @@ function choiceControl(key, options) {
     radio.addEventListener("change", () => {
       labelPrefs[key] = opt.value;
       localStorage.setItem(labelPrefStorageKey(key), opt.value);
+      labelDroneNishadas();
       buildReferenceTable();
       renderInputs();
       renderResults();
@@ -2739,6 +3054,7 @@ async function init() {
   initTempo();
   buildReferenceTable();
   renderMuteButton();
+  initDroneControls();
   updateLayoutVisibility(); // also runs updateControlAvailability() - Play both defaults checked
   renderInputs();
   // Before the await, so a shared link opened cold shows the raga view with a
@@ -2757,7 +3073,8 @@ async function init() {
       .map((r) => [r.mela, r]));
   } catch (err) {
     promptEl.textContent = `Failed to load raga data: ${err.message}`;
-    promptEl.hidden = false;
+    promptEl.classList.add("prompt-error"); // an error is not a hint: full strength
+    fadeHidden(promptEl, false);
     return;
   }
   dataReady = true;
@@ -2804,3 +3121,7 @@ if ("serviceWorker" in navigator) {
     });
   });
 }
+
+// Fades (fadeHidden) only once the page has drawn its first frames, so the
+// state restored at load is simply shown, not animated into.
+requestAnimationFrame(() => requestAnimationFrame(() => document.body.classList.add("fades-ready")));

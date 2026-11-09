@@ -200,12 +200,24 @@ h1 {
   transform: translateY(-50%) scale(0.97);
 }
 
+/* Search top left, the reference (melakarta wheel) page beside it, Settings
+   top right (user, 2026-11-09). */
 #search-open-btn {
-  right: 0;
+  left: 0;
 }
 
 #settings-open-btn {
-  left: 0;
+  left: 2.9rem; /* one button (2.4rem) and a 0.5rem gap */
+}
+
+#controls-open-btn {
+  right: 0;
+}
+
+/* Settings open: the gear shows it, as the Drone button shows the drone on. */
+#controls-open-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* The search icon (icons/search-icon.png) is a solid black glyph on a
@@ -714,7 +726,8 @@ h1 {
    existing <label><input>...</label> structure and all its JS
    (`.checked` reads/writes) keep working unchanged. */
 .control-group input[type="checkbox"],
-.playback-controls input[type="checkbox"] {
+.playback-controls input[type="checkbox"],
+.drone-follow input[type="checkbox"] {
   appearance: none;
   width: 2.3rem;
   height: 1.3rem;
@@ -728,7 +741,8 @@ h1 {
 }
 
 .control-group input[type="checkbox"]::after,
-.playback-controls input[type="checkbox"]::after {
+.playback-controls input[type="checkbox"]::after,
+.drone-follow input[type="checkbox"]::after {
   content: "";
   position: absolute;
   top: 1px;
@@ -742,13 +756,15 @@ h1 {
 }
 
 .control-group input[type="checkbox"]:checked,
-.playback-controls input[type="checkbox"]:checked {
+.playback-controls input[type="checkbox"]:checked,
+.drone-follow input[type="checkbox"]:checked {
   background: var(--accent);
   border-color: var(--accent);
 }
 
 .control-group input[type="checkbox"]:checked::after,
-.playback-controls input[type="checkbox"]:checked::after {
+.playback-controls input[type="checkbox"]:checked::after,
+.drone-follow input[type="checkbox"]:checked::after {
   transform: translateX(1rem);
 }
 
@@ -789,6 +805,25 @@ h1 {
   background: #e2434c;
   color: white;
   border-color: #e2434c;
+}
+
+/* The drone's "on" is the app's accent, not Mute's red: red says sound is
+   off, and a drone that is on is the opposite news. */
+.drone-btn.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.range-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.range-label input[type="range"] {
+  width: 6.5rem;
+  accent-color: var(--accent);
 }
 
 #separate-inputs {
@@ -1872,24 +1907,65 @@ h1 {
   justify-self: end;
 }
 
-/* A hidden stand-in for "Set as 0", so the tail column reserves the same width
-   the lead column needs and the centre group stays centred on the widget.
-   The 1fr columns balance on their own while there is room to spare, but once
-   the row gets narrow the lead's min-content wins over its 1fr share and shoves
-   the arrows off the widget's axis - measured 12.8px right of centre on a 320px
-   phone once the label grew to two lines. Reserving the same box on the other
-   side costs nothing and holds at every width.
-   Coupled to .set-zero-btn's text and box by hand: if that button's label or
-   padding changes, change it here too. The failure mode is a few pixels of
-   asymmetry, not a broken layout. */
-.transpose-tail::before {
-  content: "Set as 0";
+/* The tail holds the drone-follow switch (specs/09 Phase 2). It used to hold
+   a hidden stand-in for "Set as 0" so the arrows stayed centred; with real
+   content on both sides the 1fr columns balance it themselves, and below the
+   width where all three fit the row stacks (media query below). */
+.transpose-tail {
+  justify-self: start;
+}
+
+/* Headed like the Tempo pills: a small dimmed legend centred over the control,
+   and the same strip reserved below it (see .tempo-pills), so the switch sits
+   on the arrows' centreline rather than a legend's height below it. */
+.drone-follow-set {
+  --tempo-legend-size: 0.75rem;
+  --tempo-legend-leading: 1.2;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  border: none;
+  margin: 0 0 calc(var(--tempo-legend-size) * var(--tempo-legend-leading));
+  padding: 0;
+  min-width: 0;
+}
+
+.drone-follow-set legend {
+  font-size: var(--tempo-legend-size);
+  line-height: var(--tempo-legend-leading);
+  opacity: 0.7;
+  padding: 0;
+  width: 100%;
+  text-align: center;
+}
+
+/* The text swaps between "Original Sa" and "New Sa". Left to its own width
+   the control would change size on every tap and drag the centred "Tanpura"
+   legend with it, so the text sits in a slot always as wide as the longer
+   label: a hidden copy of it shares the slot's one grid cell. If the labels in
+   app.js syncDroneFollow change, change this content to the longer one. */
+.drone-follow-slot {
+  display: inline-grid;
+}
+
+.drone-follow-slot::before {
+  content: "Original Sa";
   visibility: hidden;
-  display: inline-block;
-  white-space: nowrap;
+  grid-area: 1 / 1;
+}
+
+.drone-follow-text {
+  grid-area: 1 / 1;
+  text-align: left;
+}
+
+.drone-follow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   font-size: 0.75rem;
-  padding: 0.25rem 0.6rem;
-  border: 1px solid transparent;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 /* Below this width the three-column row cannot do both things it is asked to
@@ -1897,20 +1973,19 @@ h1 {
    and "Set as 0" claims 62px on each side, its own and the tail's matching
    reservation - and a 375px phone only offers a 343px row. So on narrow screens
    "Set as 0" takes a line of its own above the arrows, which keeps the arrows
-   exactly on the widget's axis and keeps the button from being squeezed. On
-   anything wider the row stays as it was. */
-@media (max-width: 383px) {
+   exactly on the widget's axis and keeps the button from being squeezed. The
+   drone switch in the tail made the full row need ~540px, so the breakpoint
+   moved up from 383px and the switch gets its own line below the arrows. */
+@media (max-width: 559px) {
   .transpose-row {
     grid-template-columns: 1fr;
     row-gap: 0.3rem;
   }
 
-  .transpose-lead {
-    justify-self: center;
-  }
-
+  .transpose-lead,
+  .transpose-main,
   .transpose-tail {
-    display: none;
+    justify-self: center;
   }
 }
 
@@ -3350,3 +3425,180 @@ h1 {
   opacity: 0.6;
 }
 
+
+
+/* --- Home page reorganisation (user, 2026-11-09) ------------------------- */
+
+/* The Settings panel's own heading and close button; the panel itself keeps
+   the .controls-panel card. */
+.controls-panel[hidden] {
+  display: none;
+}
+
+.controls-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.controls-panel-head h2 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.controls-close-btn {
+  font: inherit;
+  font-size: 1.3rem;
+  line-height: 1;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+
+.controls-close-btn:hover {
+  border-color: var(--card-border);
+}
+
+/* The input area's head: its title with the prompt beside it (the prompt
+   wraps under the title on a narrow screen). */
+.input-area-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.8rem;
+  row-gap: 0.2rem;
+  margin: 0 0 0.6rem;
+}
+
+.input-area-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  margin: 0;
+  opacity: 0.85;
+}
+
+/* Dimmed like a placeholder (user, 2026-11-09): a hint that goes away once
+   swaras are chosen, not a fixture of the page. */
+.input-area-head .prompt {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 400;
+  /* The faintest text in the app - below disabled controls (0.35-0.38) and
+     well below labels and legends (0.7) - so it never reads as one of them
+     (user, 2026-11-09). */
+  opacity: 0.28;
+}
+
+/* Mute and Tanpura, on the line under the area's title. */
+.sound-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0 0 0.8rem;
+}
+
+/* "First string" had its text touching the select's outline. */
+.drone-first-label {
+  gap: 0.45rem;
+}
+
+/* Tempo and the Tanpura follow switch take the Settings boxes' format: a
+   bordered card with its label set into the top border, left. The strip the
+   old centred caption reserved below the pills goes with it - the legend now
+   sits in the border, inside the box's own height. */
+.tempo-pills,
+.drone-follow-set {
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  padding: 0.1rem 0.5rem 0.35rem;
+  background: canvas;
+  box-shadow: var(--card-shadow);
+  margin: 0;
+}
+
+.tempo-pills legend,
+.drone-follow-set legend {
+  font-size: 0.75rem;
+  opacity: 0.7;
+  padding: 0 0.3rem;
+  width: auto;
+  text-align: left;
+  line-height: normal;
+}
+
+/* Octave: the slider's three stops numbered under it, each number centred on
+   where the thumb sits at that stop (the thumb's centre runs half a thumb in
+   from each end). */
+.ticked-range {
+  display: inline-flex;
+  flex-direction: column;
+  --thumb-half: 8px;
+}
+
+.range-ticks {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 calc(var(--thumb-half) - 0.5em);
+  font-size: 0.7rem;
+  line-height: 1;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.range-ticks span {
+  width: 1em;
+  text-align: center;
+}
+
+/* The Tanpura switch beside Tonic shift fades out when the tanpura can't
+   sound, keeping its place so the row doesn't shift. */
+.drone-follow-set {
+  transition: opacity 0.35s ease, visibility 0s linear 0s;
+}
+
+.drone-follow-set.faded-out {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.35s ease, visibility 0s linear 0.35s;
+}
+
+/* `display: grid` outranks the UA's [hidden]; Avarohana's row hides while
+   "Shift both" is on. */
+.transpose-row[hidden] {
+  display: none;
+}
+
+/* Everything that appears and disappears with fadeHidden() / smoothSwap() in
+   app.js - the Tanpura switch's 0.35 s fade; the room it takes or gives back
+   is eased by the script. */
+.fades {
+  transition: opacity 0.35s ease;
+}
+
+.fades.fading-out,
+.input-area-head .prompt.fades.fading-out {
+  opacity: 0;
+}
+
+.input-area-head .prompt.prompt-error {
+  opacity: 1;
+  font-style: normal;
+}
+
+/* "Set as 0" fades out when there is no shift to reset, keeping its place -
+   the Tanpura switch's fade. */
+.set-zero-btn {
+  transition: border-color 0.12s ease, opacity 0.35s ease, visibility 0s linear 0s;
+}
+
+.set-zero-btn.faded-out,
+.set-zero-btn.faded-out:disabled {
+  opacity: 0;
+  visibility: hidden;
+  transition: border-color 0.12s ease, opacity 0.35s ease, visibility 0s linear 0.35s;
+}

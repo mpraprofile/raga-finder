@@ -12,7 +12,7 @@
 // and both read on every note so a tempo change applies to the next one, as it
 // always has.
 
-import { playPianoToneAt, whenRunning } from "./audio.js";
+import { playPianoToneAt, sequenceEnded, sequenceStarted, whenRunning } from "./audio.js";
 
 const TICK_MS = 25;
 const LOOK_AHEAD_S = 0.12;
@@ -23,16 +23,33 @@ const START_DELAY_S = 0.02;
 // when the pass is over - one note-slot after the last note, as the old loop
 // did - unless `loop()` says to go round again. Cancelling stops the timer and
 // silences any note queued but not yet sounding; notes already sounding ring out.
-export function playSequence({ sequence, pauseAfterIndex, gap, turnaround, loop = () => false, onEnd }) {
+//
+// `startIndex` / `startAt` resume a sequence part-way: from that note, at that
+// audio time (if it is still ahead). `position()` reports where a pass is - the
+// first note not yet sounding and when it was due - for a caller that rebuilds
+// the sequence and carries on (a tonic shift mid-playback).
+export function playSequence({ sequence, pauseAfterIndex, gap, turnaround, loop = () => false, onEnd, startIndex = 0, startAt = null }) {
   let cancelled = false;
+  let i = startIndex;
+  let next = null;
+  let clock = null;
   let timer = null;
   const queued = [];
+  // Reported once each way, for the drone's "under playback" (audio.js).
+  let finished = false;
+  const leadIn = sequenceStarted(); // seconds the drone needs to lay the ground first, or 0
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    sequenceEnded();
+  };
 
   whenRunning()
     .then((audioCtx) => {
       if (cancelled) return;
-      let i = 0;
-      let next = audioCtx.currentTime + START_DELAY_S;
+      clock = audioCtx;
+      const earliest = audioCtx.currentTime + START_DELAY_S;
+      next = startAt !== null && startAt >= earliest ? startAt : earliest + leadIn;
       let endAt = null;
 
       const tick = () => {
@@ -50,7 +67,7 @@ export function playSequence({ sequence, pauseAfterIndex, gap, turnaround, loop 
             next += turnaround(); // pause at the loop boundary before the pass repeats
             continue;
           }
-          queued.push({ when: next, voice: playPianoToneAt(sequence[i], next) });
+          queued.push({ when: next, index: i, voice: playPianoToneAt(sequence[i], next) });
           next += i === pauseAfterIndex ? turnaround() : gap();
           i++;
         }
@@ -58,6 +75,7 @@ export function playSequence({ sequence, pauseAfterIndex, gap, turnaround, loop 
         if (endAt !== null && now >= endAt) {
           clearInterval(timer);
           timer = null;
+          finish();
           if (onEnd) onEnd();
         }
       };
@@ -65,15 +83,24 @@ export function playSequence({ sequence, pauseAfterIndex, gap, turnaround, loop 
       tick();
       if (endAt === null || audioCtx.currentTime < endAt) timer = setInterval(tick, TICK_MS);
     })
-    .catch(() => {});
+    .catch(finish);
 
   return {
+    position() {
+      // The first queued note that has not started yet is where to carry on;
+      // with none queued, the note the loop would schedule next.
+      const now = clock ? clock.currentTime : 0;
+      const ahead = queued.find((q) => q.when > now);
+      if (ahead) return { index: ahead.index, when: ahead.when };
+      return { index: i, when: next };
+    },
     cancel() {
       cancelled = true;
       if (timer !== null) clearInterval(timer);
       timer = null;
       queued.forEach((q) => q.voice.cancel());
       queued.length = 0;
+      finish();
     },
   };
 }
