@@ -128,7 +128,7 @@ function originalLabel(degreeFromKey, labelPrefs) {
 //
 // `freePlay` drops the whole notion of a selection: every key is live,
 // nothing is highlighted, and a tap just sounds the note (app.js's
-// addOrToggle handles that, and playPianoTone is happy with any integer
+// addOrToggle handles that, and playNote is happy with any integer
 // semitone, negative or past 12).
 export function render(container, props) {
   const { pitches, onToggle, labelPrefs, order, saOffset = 0, keyOffset = 0, freePlay = false } = props;

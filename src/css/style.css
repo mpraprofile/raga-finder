@@ -3602,3 +3602,466 @@ h1 {
   visibility: hidden;
   transition: border-color 0.12s ease, opacity 0.35s ease, visibility 0s linear 0.35s;
 }
+
+/* --- The home screen at every size (specs/10-responsive-home-layout.md) ---
+   Measured before: at 360x660 the piano began ~480px down, half off the
+   screen; in landscape it was off the screen entirely. Everything above it
+   is compacted here; the piano itself stays in the page flow (user's choice,
+   2026-11-10). */
+
+/* Mute/Tanpura head the controls row (user, 2026-11-10): the title moved
+   down beside Set as 0, the prompt to the results line, and the two buttons
+   left on a line of their own looked stranded. */
+.widget-header .sound-row {
+  margin: 0;
+  gap: 0.3rem;
+  flex-wrap: nowrap;
+}
+
+/* Each sized to its longer label ("Unmute", "Tanpura on"), so a tap never
+   changes its width and nudges its neighbour; narrower than the old shared
+   6.8rem so both fit beside the title on a 360px phone. */
+.mute-btn {
+  min-width: 5.6rem;
+  padding: 0.45rem 0.6rem;
+}
+
+.drone-btn {
+  min-width: 7rem;
+}
+
+/* Loop's label beside its switch, not wrapped under it. */
+.playback-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  white-space: nowrap;
+}
+
+/* Tempo as one joined four-way switch (user, 2026-11-10): the four round pills
+   with gaps wrapped to two rows on a phone. Still labelled "Tempo" in the
+   border. Scoped to the finder; the raga page's pills are left as they are. */
+.playback-controls .tempo-pills {
+  flex-wrap: nowrap;
+  gap: 0;
+  padding: 0 0.4rem 0.35rem;
+}
+
+.playback-controls .tempo-pills label:has(input[type="radio"]) {
+  min-width: 2.15rem;
+  padding: 0.25rem 0.35rem;
+  border-radius: 0;
+  margin-left: -1px;
+}
+
+.playback-controls .tempo-pills label:has(input[type="radio"]):first-of-type {
+  border-radius: 999px 0 0 999px;
+  margin-left: 0;
+}
+
+.playback-controls .tempo-pills label:has(input[type="radio"]):last-of-type {
+  border-radius: 0 999px 999px 0;
+}
+
+/* The checked one's accent border overlaps its neighbours' grey ones. */
+.playback-controls .tempo-pills label:has(input[type="radio"]:checked),
+.playback-controls .tempo-pills label:has(input[type="radio"]):hover {
+  z-index: 1;
+}
+
+/* The keyboard follows the screen's height: unchanged 200px wherever there is
+   room, down to 140px on a short screen. dvh tracks the phone browser's
+   toolbar as it shows and hides. */
+.piano {
+  height: 200px;
+  height: clamp(140px, 30dvh, 200px);
+}
+
+/* Portrait phone. */
+@media (max-width: 559px) {
+  body {
+    margin-top: 0.75rem;
+  }
+
+  .app-header {
+    margin-bottom: 0.75rem;
+  }
+
+  .app-title img {
+    height: 52px;
+  }
+
+
+  /* Clear, Play, Loop and Tempo on one line at 360px - with ~4px to spare,
+     so each is trimmed of padding rather than of its label. Below 360px
+     Clear wraps onto a line of its own, which is where it used to be. */
+  body {
+    padding: 0 0.6rem;
+  }
+
+  .widget-header,
+  .playback-controls {
+    gap: 0.3rem;
+  }
+
+  .reset-btn {
+    padding: 0.4rem 0.6rem;
+  }
+
+  /* 4.6rem still clears "Stop" at this padding (measured 72.6px). */
+  .playback-controls button {
+    padding: 0.4rem 0.7rem;
+    min-width: 4.6rem;
+  }
+
+  .playback-controls label {
+    font-size: 0.85rem;
+    gap: 0.25rem;
+  }
+
+  .playback-controls input[type="checkbox"] {
+    margin: 0;
+  }
+
+  .playback-controls .tempo-pills label:has(input[type="radio"]) {
+    min-width: 1.75rem;
+    padding: 0.25rem 0.25rem;
+  }
+
+  /* Replaces the three stacked lines (Set as 0 / arrows / Tanpura switch):
+     Set as 0 and the arrows share a line, and the Tanpura switch joins them
+     where it fits (from ~400px) or wraps under them. The arrows are no longer
+     exactly on the widget's axis - one line less is worth more on a phone. */
+  .transpose-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    column-gap: 0.6rem;
+    row-gap: 0.3rem;
+  }
+
+  .piano {
+    margin-bottom: 1rem;
+  }
+
+  #separate-inputs {
+    gap: 0.6rem;
+  }
+}
+
+/* Separate layout: two keyboards stacked, each a little shorter on a short
+   screen so the second one's top is on the first screen (user, 2026-11-10). */
+#separate-inputs .piano {
+  height: clamp(120px, 22dvh, 200px);
+}
+
+/* Landscape phone: height is the scarce thing, width is not. */
+@media (max-height: 500px) and (orientation: landscape) {
+  body {
+    max-width: none;
+    margin: 0.5rem auto;
+    padding: 0 max(1rem, env(safe-area-inset-right)) 0 max(1rem, env(safe-area-inset-left));
+  }
+
+  /* The wordmark at the icon buttons' height, so the header costs one line. */
+  .app-header {
+    margin-bottom: 0.4rem;
+  }
+
+  .app-title img {
+    height: 38px;
+  }
+
+
+  /* Icon only; the word stays for screen readers, and in the tooltip. */
+  .mute-btn {
+    min-width: 0;
+    padding: 0.4rem 0.55rem;
+  }
+
+  .mute-btn span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  /* Each block's Clear/Play/Loop/Tempo and its Tonic shift side by side. */
+  .mode-block,
+  .direction-block {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    column-gap: 1.25rem;
+  }
+
+  .mode-block[hidden] {
+    display: none;
+  }
+
+  #combined-input,
+  #arohana-input,
+  #avarohana-input {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+
+  .widget-header {
+    margin-bottom: 0.4rem;
+  }
+
+  .transpose-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.4rem;
+  }
+
+  .piano,
+  #separate-inputs .piano {
+    height: max(140px, calc(100dvh - 13rem));
+    max-height: 200px;
+    margin-bottom: 1rem;
+  }
+
+  #separate-inputs {
+    gap: 0.5rem;
+  }
+}
+
+/* Wide screens: the input on the left at its usual width, the results on the
+   right in their own scrolling column, so the keyboard stays in view while the
+   list is read. */
+@media (min-width: 1000px) and (min-height: 600px) {
+  body {
+    max-width: 1240px;
+  }
+
+  #main-view {
+    display: grid;
+    grid-template-columns: minmax(0, 668px) minmax(0, 1fr);
+    /* The last row is flexible on purpose: an item spanning a flexible track
+       gives its height to that track only, so a long results column can't
+       stretch the input rows beside it. */
+    grid-template-rows: auto auto auto auto auto 1fr;
+    column-gap: 2.5rem;
+  }
+
+  #main-view[hidden] {
+    display: none;
+  }
+
+  #main-view > .app-header { grid-column: 1 / -1; grid-row: 1; }
+  #main-view > .controls-panel { grid-column: 1; grid-row: 2; }
+  #main-view > #combined-block { grid-column: 1; grid-row: 4; }
+  #main-view > #separate-inputs { grid-column: 1; grid-row: 5; }
+
+  #main-view > #results-pane {
+    grid-column: 2;
+    grid-row: 2 / 7;
+    align-self: start;
+    position: sticky;
+    top: 1rem;
+    /* Less the header above it (~11rem with the page margin), so the column
+       ends on the screen without the page having to scroll first. */
+    max-height: calc(100dvh - 12rem);
+    overflow-y: auto;
+    padding-right: 0.25rem;
+  }
+
+  /* The other views keep the single column they were designed at. */
+  #search-view,
+  #raga-view {
+    max-width: 668px;
+    margin-inline: auto;
+  }
+}
+
+/* --- Spec 10, second pass (user, 2026-11-10) ------------------------------ */
+
+/* The prompt where the results' count line appears, in that line's place and
+   at its inset; as faint as it was beside the title (0.28, user 2026-11-09). */
+#results-pane .prompt {
+  margin: 0;
+  padding: 0 0.5rem 0.5rem;
+  font-size: 0.8rem;
+  opacity: 0.28;
+}
+
+#results-pane .prompt.fades.fading-out {
+  opacity: 0;
+}
+
+#results-pane .prompt.prompt-error {
+  opacity: 1;
+  font-style: normal;
+}
+
+/* The keyboard's title at the left of the Tonic shift line, Set as 0 beside
+   it. On a wide row the lead column stretches so the title sits at the left
+   edge and Set as 0 stays against the arrows. */
+.transpose-lead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  justify-self: stretch;
+}
+
+.transpose-lead .input-area-title {
+  font-size: 0.95rem;
+  white-space: nowrap;
+}
+
+@media (max-width: 559px) {
+  /* Title, Set as 0 and the arrows on one line at 360px: each trimmed of
+     padding and the shift counts of the room a two-digit number would want
+     (a shift is at most a handful of swaras either way). */
+  .transpose-row {
+    column-gap: 0.4rem;
+  }
+
+  .transpose-lead {
+    gap: 0.4rem;
+  }
+
+  .transpose-lead .input-area-title {
+    font-size: 0.88rem;
+  }
+
+  .set-zero-btn {
+    padding: 0.25rem 0.45rem;
+  }
+
+  .transpose-main {
+    gap: 0.25rem;
+  }
+
+  .transpose-count {
+    min-width: 1.2rem;
+  }
+}
+
+/* The swara wheel never runs off the bottom of the screen: as wide as the
+   column allows, at most 380px, and no taller than the room left under the
+   controls. Not below 260px, where its notes would get too small to tap. */
+.wheel {
+  width: max(260px, min(100%, 380px, calc(100dvh - 18rem)));
+  max-width: 100%;
+}
+
+/* Phone landscape: the wheel beside its controls rather than under them,
+   sized to the screen's height - under them it would be 150px across. */
+@media (max-height: 500px) and (orientation: landscape) {
+  .mode-block:has(.wheel-wrap),
+  .direction-block:has(.wheel-wrap) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto 1fr;
+    column-gap: 1.25rem;
+    align-items: start;
+  }
+
+  .mode-block:has(.wheel-wrap) > .widget-header,
+  .direction-block:has(.wheel-wrap) > .widget-header,
+  .mode-block:has(.wheel-wrap) > .transpose-row,
+  .direction-block:has(.wheel-wrap) > .transpose-row {
+    grid-column: 1;
+  }
+
+  .mode-block:has(.wheel-wrap) > [id$="-input"],
+  .direction-block:has(.wheel-wrap) > [id$="-input"] {
+    grid-column: 2;
+    grid-row: 1 / 4;
+  }
+
+  .mode-block:has(.wheel-wrap) .transpose-row {
+    flex-wrap: wrap;
+  }
+
+  .wheel-wrap {
+    margin: 0;
+  }
+
+  .wheel {
+    width: max(220px, calc(100dvh - 4.5rem));
+  }
+}
+
+/* Mute and Tanpura keep their words wherever the words fit on the line they
+   are on, and drop to icons only where that is what keeps the controls on one
+   line (user, 2026-11-10). Measured against the block, so it follows the
+   window as it is resized, not just the device:
+   - wide enough for everything with words: words;
+   - wide enough for everything with icons only: icons, one line;
+   - narrower still: the row breaks into two lines anyway (Mute, Tanpura,
+     Clear / Play, Loop, Tempo), and on two lines the words fit - so words.
+   The separate layout's row also carries its Arohana heading, so its
+   thresholds sit one heading wider. The words stay for screen readers and
+   in each button's tooltip. Phone landscape is icons always (above). */
+.mode-block,
+.direction-block {
+  container-type: inline-size;
+}
+
+/* Measured 2026-11-10: the combined row needs 546px with words / 414px with
+   icons at phone sizing (viewport < 560px), and 609px / 478px at full sizing.
+   So icons from 420px up to 611px of block. */
+@container (min-width: 420px) and (max-width: 611px) {
+  .mode-block .mute-btn {
+    min-width: 0;
+    padding: 0.4rem 0.55rem;
+  }
+
+  .mode-block .mute-btn span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* The Arohana row: the same, plus its heading (~84px). */
+@container (min-width: 504px) and (max-width: 695px) {
+  .direction-block .mute-btn {
+    min-width: 0;
+    padding: 0.4rem 0.55rem;
+  }
+
+  .direction-block .mute-btn span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* The wheel's unused bottom strip is trimmed (wheel.js fitWheelBottom): a
+   negative bottom margin of --wheel-trim wheel-widths. Registered so the
+   change can be animated - a plain custom property would only snap. The width
+   expression is repeated here as --wheel-size so the margin matches the width
+   exactly (both percentages resolve against the wheel-wrap). */
+@property --wheel-trim {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
+.wheel {
+  --wheel-size: max(260px, min(100%, 380px, calc(100dvh - 18rem)));
+  width: var(--wheel-size);
+  margin-bottom: calc(var(--wheel-size) * var(--wheel-trim) * -1);
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .wheel {
+    --wheel-size: max(220px, calc(100dvh - 4.5rem));
+  }
+}

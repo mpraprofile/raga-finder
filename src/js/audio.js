@@ -3,6 +3,7 @@
 // See specs/02-swara-keyboard-finder.md "Audio" for the frequency formula.
 
 import { ROUND_S, Tanpura } from "./tanpura.js";
+import { VEENA_TABLE } from "./veena-table.js";
 
 // Middle C, at concert pitch (A4 = 440). Everything the app sounds is measured
 // from here in semitones, and the Key/Shruti setting is nothing more than which
@@ -30,10 +31,14 @@ export function getContext() {
 // Resolves once the context is running. resume() is called synchronously, so
 // a caller inside a click keeps the gesture valid; the Promise.resolve wrapper
 // is for old WebKit, whose resume() returns undefined.
+// It also waits for the chosen voice: the veena is a worklet module that has
+// to load once (from the service worker's cache, a few milliseconds), and a
+// phrase should not begin on one instrument and carry on with another.
 export function whenRunning() {
   const audioCtx = getContext();
-  if (audioCtx.state === "running") return Promise.resolve(audioCtx);
-  return Promise.resolve(audioCtx.resume()).then(() => audioCtx);
+  const running = audioCtx.state === "running" ? Promise.resolve() : Promise.resolve(audioCtx.resume());
+  const voice = veena && wantsVeena() ? veena.ready : Promise.resolve();
+  return Promise.all([running, voice]).then(() => audioCtx);
 }
 
 // --- The graph (specs/09 Phase 1) ---------------------------------------------
@@ -144,6 +149,12 @@ function makeImpulse(audioCtx, decay) {
 // these; until then the defaults are what everyone hears.
 const SOUND_STORAGE_KEY = "soundSettings";
 const SOUND_DEFAULTS = {
+  // What a swara is played on (Phase 3): the piano tone the app had from the
+  // start, or the veena rebuilt from a real one's measurements. Piano stays
+  // the default (user, 2026-11-09); the veena is "the veena for now" (user,
+  // 2026-11-10) and still in progress. Without AudioWorklet the veena falls
+  // back to the piano by itself.
+  voice: "piano", // piano | veena
   reverbMix: 0.28,
   reverbDecay: 3.2,
   // The tanpura (Phase 2). Whether it is on is not a setting - a page cannot
@@ -204,6 +215,7 @@ function applySoundSettings() {
     graph.reverb.buffer = makeImpulse(ctx, reverbDecay);
     graph.decay = reverbDecay;
   }
+  if (wantsVeena() && !veena) veena = buildVeena(ctx);
   if (drone) {
     retuneDrone();
     updateDrone();
@@ -270,34 +282,104 @@ const PARTIALS = [
   { mult: 4, gain: 0.06 },
 ];
 
-export function playPianoTone(semitonesFromC4) {
+// A swara, now, on whichever voice is chosen: what a tap on a key plays.
+export function playNote(semitonesFromC4) {
   if (muted) return;
 
   const audioCtx = getContext();
-  if (audioCtx.state === "running") {
-    scheduleTone(audioCtx, semitonesFromC4);
+  if (audioCtx.state === "running" && (!wantsVeena() || veena?.settled)) {
+    startNote(audioCtx, semitonesFromC4);
     return;
   }
 
   // Suspended - the first tap of the session, or iOS having interrupted us
   // while the app was backgrounded or a call came in. resume() is async, and
   // notes scheduled against a still-suspended clock get dropped on iOS, so
-  // wait for it. resume() itself is called synchronously inside the click,
-  // which is what keeps the gesture valid.
-  // Promise.resolve wrapper: old WebKit's resume() returns undefined.
-  Promise.resolve(audioCtx.resume())
-    .then(() => scheduleTone(audioCtx, semitonesFromC4))
+  // wait for it. resume() itself is called synchronously inside the click
+  // (in whenRunning), which is what keeps the gesture valid. The same wait
+  // covers the veena's module still loading on the very first tap.
+  whenRunning()
+    .then(() => startNote(audioCtx, semitonesFromC4))
     .catch(() => {});
 }
 
-// For the scheduler (scheduler.js): the same tone at an exact AudioContext
-// time, laid down ahead of when it sounds. Assumes a running context - the
-// scheduler waits for one. Returns a handle whose cancel() silences the note
+// For the scheduler (scheduler.js): the same note at an exact AudioContext
+// time, laid down ahead of when it sounds. Assumes whenRunning() has resolved -
+// the scheduler waits for it. Returns a handle whose cancel() silences the note
 // if it has not started yet, so a Stop pressed with notes already queued
 // inside the look-ahead window does not let them through.
-export function playPianoToneAt(semitonesFromC4, when) {
+//
+// `phrase` marks the notes of one sequence: on the veena they are played on one
+// string, each damping the one before, as a phrase is. `bend` is a pitch curve
+// for the note, [[seconds, cents], ...] - a gamaka (Phase 4); the piano tone
+// ignores both.
+export function playNoteAt(semitonesFromC4, when, options) {
   if (muted) return { cancel() {} };
-  return scheduleTone(getContext(), semitonesFromC4, when);
+  return startNote(getContext(), semitonesFromC4, when, options);
+}
+
+function startNote(audioCtx, semitonesFromC4, when = audioCtx.currentTime, { phrase = false, bend = null } = {}) {
+  if (!wantsVeena() || !veena?.node) return scheduleTone(audioCtx, semitonesFromC4, when);
+  const id = ++veenaNoteId;
+  const port = veena.node.port;
+  port.postMessage({ type: "note", id, hz: frequencyAt(semitonesFromC4 + 12 * VEENA_OCTAVE), when, group: phrase ? "phrase" : null, bend });
+  return {
+    cancel() {
+      port.postMessage({ type: "cancel", id }); // the worklet drops it only if it has not begun
+    },
+  };
+}
+
+// --- The veena voice (specs/09 Phase 3) -----------------------------------------
+//
+// One worklet node (veena.js) for every veena note: a message per note, timed
+// on the audio clock, so a tap and a scheduled phrase take the same path. The
+// voice is rebuilt from measurements of a real veena (veena-table.js, handed to
+// the worklet once), and those already hold the instrument's body, so nothing
+// shapes it afterwards: it goes straight to the voice bus and shares the room
+// with the piano tone and the drone - listening round 2's card C, the one
+// chosen (user, 2026-11-10). Voices are capped inside the worklet.
+//
+// VEENA_GAIN: rendered offline, a veena note peaks at 2.1 and measures 14 dB
+// over the piano tone for the same key by A-weighted level; 0.23 brings its
+// peak to 0.5 and its level to within 2 dB of the piano's.
+//
+// VEENA_OCTAVE: the veena sounds an octave below the piano tone for the same
+// key. That is where a veena plays (its Sa was 157 Hz in the recording), where
+// it was measured (157-311 Hz) and where it was heard and chosen; an octave up,
+// most of a scale would lie above every measured note and be an estimate.
+// Kept low on the user's word (2026-11-10).
+const VEENA_GAIN = 0.23;
+const VEENA_OCTAVE = -1;
+let veena = null;
+let veenaNoteId = 0;
+
+function wantsVeena() {
+  return soundSettings.voice === "veena";
+}
+
+function buildVeena(audioCtx) {
+  const v = { node: null, settled: false, ready: null };
+  const output = audioCtx.createGain();
+  output.gain.value = VEENA_GAIN;
+  output.connect(graph.voiceBus);
+  const loaded = audioCtx.audioWorklet
+    ? audioCtx.audioWorklet.addModule(new URL("./veena.js", import.meta.url))
+    : Promise.reject(new Error("no AudioWorklet"));
+  v.ready = loaded
+    .then(() => {
+      v.node = new AudioWorkletNode(audioCtx, "swaraga-veena", { numberOfInputs: 0, outputChannelCount: [1] });
+      v.node.connect(output);
+      v.node.port.postMessage({ type: "set", table: VEENA_TABLE });
+    })
+    .catch(() => {
+      // No worklet, or the module failed to load: v.node stays null and every
+      // note is played on the piano tone instead.
+    })
+    .then(() => {
+      v.settled = true;
+    });
+  return v;
 }
 
 function scheduleTone(audioCtx, semitonesFromC4, when = audioCtx.currentTime) {

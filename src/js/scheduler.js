@@ -12,7 +12,7 @@
 // and both read on every note so a tempo change applies to the next one, as it
 // always has.
 
-import { playPianoToneAt, sequenceEnded, sequenceStarted, whenRunning } from "./audio.js";
+import { playNoteAt, sequenceEnded, sequenceStarted, whenRunning } from "./audio.js";
 
 const TICK_MS = 25;
 const LOOK_AHEAD_S = 0.12;
@@ -67,7 +67,7 @@ export function playSequence({ sequence, pauseAfterIndex, gap, turnaround, loop 
             next += turnaround(); // pause at the loop boundary before the pass repeats
             continue;
           }
-          queued.push({ when: next, index: i, voice: playPianoToneAt(sequence[i], next) });
+          queued.push({ when: next, index: i, voice: playNoteAt(sequence[i], next, { phrase: true }) });
           next += i === pauseAfterIndex ? turnaround() : gap();
           i++;
         }

@@ -19,7 +19,7 @@ import {
   ragaForms,
   prepare as prepareMatching,
 } from "./ragas.js";
-import { getSoundSettings, isDroneOn, playPianoTone, setDroneOn, setDroneTonic, setMuted, setSoundSettings } from "./audio.js";
+import { getSoundSettings, isDroneOn, playNote, setDroneOn, setDroneTonic, setMuted, setSoundSettings } from "./audio.js";
 import { playSequence } from "./scheduler.js";
 import { REFERENCE_ROWS, referenceRowCode, noteLabel, degreeOf, labelForDegree } from "./notation.js";
 import { checkAgainstStored } from "./melakarta.js";
@@ -49,7 +49,7 @@ const LOOP_END_DELAY_MS = 900;
 // same button sounded different depending on which list you reached it from.
 // Persisted like the other preferences: anyone who speeds it up is mid-task.
 //
-// The note's own tone is untouched. playPianoTone rings for 1.4s and at 3x the
+// The note's own tone is untouched. playNote rings for 1.4s and at 3x the
 // gap is 150ms, so fast passages overlap and ring into each other - which is
 // what a fast passage does on a real instrument, and cutting the release to
 // prevent it would make the top speed sound clipped rather than quick.
@@ -202,6 +202,7 @@ const combinedControls = document.getElementById("combined-controls");
 const playBtn = document.getElementById("play-btn");
 const loopToggle = document.getElementById("loop-toggle");
 const resetBtn = document.getElementById("reset-btn");
+const soundRow = document.querySelector(".sound-row"); // Mute + Tanpura; see placeSoundRow
 
 const arohanaControls = document.getElementById("arohana-controls");
 const arohanaPlayBtn = document.getElementById("arohana-play-btn");
@@ -235,7 +236,7 @@ function toggleInList(list, degree) {
     list.splice(idx, 1); // deselecting is silent, per spec
   } else {
     list.push(degree);
-    playPianoTone(soundingDegree(list, degree));
+    playNote(soundingDegree(list, degree));
   }
 }
 
@@ -259,12 +260,12 @@ function addOrToggle(list, degree) {
   // speaks, including one that's already selected - there's no "deselect"
   // to keep silent here, so the silent-deselect rule doesn't apply.
   if (freePlay && inputStyle === "piano") {
-    playPianoTone(soundingDegree(list, degree));
+    playNote(soundingDegree(list, degree));
     return false;
   }
   if (orderMode) {
     insertDegree(list, degree);
-    playPianoTone(soundingDegree(list, degree));
+    playNote(soundingDegree(list, degree));
   } else {
     toggleInList(list, degree);
   }
@@ -311,7 +312,7 @@ function moveInList(list, from, to) {
 // the recorded click order, and whether tiles carry position badges.
 function appendNote(list, degree) {
   list.push(degree);
-  playPianoTone(soundingDegree(list, degree));
+  playNote(soundingDegree(list, degree));
 }
 function removeOneOccurrence(list, degree) {
   const idx = list.lastIndexOf(degree);
@@ -2550,6 +2551,7 @@ avarohanaResetBtn.addEventListener("click", () => {
 function renderMuteButton() {
   muteBtn.innerHTML = muted ? `${ICON_MUTED}<span>Unmute</span>` : `${ICON_UNMUTED}<span>Mute</span>`;
   muteBtn.setAttribute("aria-pressed", String(muted));
+  muteBtn.title = muted ? "Turn the app's sound back on" : "Silence all of the app's sound"; // spec 10 Phase 4
   muteBtn.classList.toggle("active", muted);
 }
 
@@ -2638,6 +2640,7 @@ function renderDroneButton() {
   const on = isDroneOn();
   droneBtn.innerHTML = `${ICON_DRONE}<span>${on ? "Tanpura on" : "Tanpura"}</span>`; // "Tanpura", as the user names it (2026-11-09)
   droneBtn.setAttribute("aria-pressed", String(on));
+  droneBtn.title = on ? "Stop the tanpura" : "Start the tanpura on Sa (tune it in Settings)"; // spec 10 Phase 4
   droneBtn.classList.toggle("active", on);
 }
 
@@ -2685,6 +2688,12 @@ function labelDroneNishadas() {
 
 function initDroneControls() {
   const settings = getSoundSettings();
+  for (const radio of document.querySelectorAll('input[name="sound-voice"]')) {
+    radio.checked = radio.value === settings.voice;
+    radio.addEventListener("change", (e) => {
+      if (e.target.checked) setSoundSettings({ voice: e.target.value });
+    });
+  }
   const first = document.getElementById("drone-first");
   const level = document.getElementById("drone-level");
   const under = document.getElementById("drone-under-playback");
@@ -2751,7 +2760,17 @@ function updateLayoutVisibility() {
   const free = inFreePlayMode();
   const showCombined = free || layoutMode === "combined";
   smoothSwap(showCombined ? separateContainer : combinedBlock, showCombined ? combinedBlock : separateContainer);
+  placeSoundRow(showCombined);
   updateControlVisibility();
+}
+
+// Mute and Tanpura head the controls row of whichever layout is showing - the
+// combined block's, or the Arohana block's in the separate layout - just
+// before that row's Clear (spec 10, user 2026-11-10). One pair of buttons,
+// moved rather than duplicated, so their state and listeners stay single.
+function placeSoundRow(showCombined) {
+  const clear = showCombined ? resetBtn : arohanaResetBtn;
+  if (clear.previousElementSibling !== soundRow) clear.before(soundRow);
 }
 
 // Switching layout carries the work across instead of stranding it in the

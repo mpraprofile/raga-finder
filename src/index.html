@@ -72,17 +72,23 @@
       <button type="button" class="controls-close-btn" id="controls-close-btn" aria-label="Close settings" title="Close">&times;</button>
     </div>
     <div class="controls-row">
-    <fieldset class="control-group" id="input-style-group">
+    <fieldset class="control-group" id="input-style-group" title="How you pick swaras: a piano keyboard, a circular swara wheel, or a row of buttons">
       <legend>Input style</legend>
       <label><input type="radio" name="input-style" value="piano" checked> Piano</label>
       <label><input type="radio" name="input-style" value="wheel"> Swara wheel</label>
       <label><input type="radio" name="input-style" value="buttons"> Buttons</label>
     </fieldset>
-    <fieldset class="control-group" id="theme-group">
+    <fieldset class="control-group" id="theme-group" title="Light or dark colours, or follow this device's setting">
       <legend>Theme</legend>
       <label><input type="radio" name="theme-pref" value="system" checked> System</label>
       <label><input type="radio" name="theme-pref" value="light"> Light</label>
       <label><input type="radio" name="theme-pref" value="dark"> Dark</label>
+    </fieldset>
+    <!-- What a swara is played on (specs/09 Phase 3); remembered per device. -->
+    <fieldset class="control-group" id="voice-group" title="The instrument swaras are played on">
+      <legend>Instrument</legend>
+      <label><input type="radio" name="sound-voice" value="piano" checked> Piano</label>
+      <label><input type="radio" name="sound-voice" value="veena"> Veena</label>
     </fieldset>
     <!-- The tanpura (specs/09 Phase 2). On/off is the Drone button beside Mute;
          these say how it is tuned and how loud it sits, and are remembered. It
@@ -90,7 +96,7 @@
          switch beside each Tonic shift row. -->
     <fieldset class="control-group" id="drone-group">
       <legend>Tanpura</legend>
-      <label class="select-label drone-first-label" for="drone-first">
+      <label class="select-label drone-first-label" for="drone-first" title="The note the tanpura's first string is tuned to: Pa usually; Ma or Ni for ragas that leave out Pa">
         First string
         <select id="drone-first" aria-label="Tanpura first string">
           <option value="pa" selected>Pa</option>
@@ -100,30 +106,30 @@
           <option value="ni">Ni (kakali)</option>
         </select>
       </label>
-      <label><input type="radio" name="drone-style" value="soft" checked> Soft</label>
-      <label><input type="radio" name="drone-style" value="pluck"> Plucked</label>
+      <label title="A gentler, rolled pluck"><input type="radio" name="drone-style" value="soft" checked> Soft</label>
+      <label title="A crisper pluck on each string"><input type="radio" name="drone-style" value="pluck"> Plucked</label>
       <!-- Order (user, 2026-11-09): Octave, Level, Pad, Swish, under playback, Low Sa. -->
-      <label class="range-label" for="drone-octave">
+      <label class="range-label" for="drone-octave" title="Raise the tanpura by one or two octaves">
         Octave
         <span class="ticked-range">
           <input type="range" id="drone-octave" min="0" max="2" step="1" value="0">
           <span class="range-ticks" aria-hidden="true"><span>0</span><span>+1</span><span>+2</span></span>
         </span>
       </label>
-      <label class="range-label" for="drone-level">
+      <label class="range-label" for="drone-level" title="How loud the tanpura is">
         Level
         <input type="range" id="drone-level" min="0" max="1" step="0.05" value="0.5">
       </label>
-      <label class="range-label" for="drone-pad">
+      <label class="range-label" for="drone-pad" title="A soft sustained chord on Sa under the plucked strings; all the way left turns it off">
         Pad
         <input type="range" id="drone-pad" min="0" max="1" step="0.05" value="0.5">
       </label>
-      <label class="range-label" for="drone-swish">
+      <label class="range-label" for="drone-swish" title="How much of the strings' buzz (jawari) you hear">
         Swish
         <input type="range" id="drone-swish" min="0" max="2" step="0.25" value="1">
       </label>
-      <label><input type="checkbox" id="drone-under-playback"> Tanpura under raga playback</label>
-      <label><input type="checkbox" id="drone-low-sa"> Low Sa string</label>
+      <label title="Sound the tanpura while swaras play, even when the Tanpura button is off"><input type="checkbox" id="drone-under-playback"> Tanpura under raga playback</label>
+      <label title="Add the tanpura's low Sa string, an octave below Sa"><input type="checkbox" id="drone-low-sa"> Low Sa string</label>
     </fieldset>
     <!-- Key / Shruti: which physical note Sa sits on. The value is semitones
          from middle C, which is exactly what the app measures pitch in.
@@ -142,7 +148,7 @@
          The second number is the kattai/shruti-box numbering: white keys 1..7
          from C, black keys the half above the key below them. There is no 3.5
          or 7.5 - E-F and B-C have no black key between them. -->
-    <fieldset class="control-group" id="key-group">
+    <fieldset class="control-group" id="key-group" title="Which note Sa sits on: the shruti you sing or play in">
       <legend>Shruti / Key</legend>
       <label class="select-label" for="key-select">
         <select id="key-select" aria-label="Key - which note Sa sits on, from G3 to G4">
@@ -162,7 +168,7 @@
         </select>
       </label>
     </fieldset>
-    <fieldset class="control-group" id="layout-group">
+    <fieldset class="control-group" id="layout-group" title="Enter the arohana and avarohana together on one keyboard, or on a keyboard each">
       <legend>Layout for Arohana-Avarohana input</legend>
       <!-- Short labels: the pair used to read "Combined" / "Separate
            arohana/avarohana", which on its own was as wide as the row allowed
@@ -176,41 +182,32 @@
            is greyed and disabled in place by updateControlAvailability(),
            so the panel never reflows underneath you. -->
       <div class="control-group" id="note-order-group">
-        <label id="play-both-label"><input type="checkbox" id="play-both-toggle" checked> Play both Arohana &amp; Avarohana</label>
-        <label id="transpose-both-label"><input type="checkbox" id="transpose-both-toggle" checked> Shift both Arohana &amp; Avarohana</label>
-        <label id="order-mode-label"><input type="checkbox" id="order-mode-toggle"> Record vakra swara order for search</label>
-        <label id="free-play-label"><input type="checkbox" id="free-play-toggle"> Free play piano</label>
+        <label id="play-both-label" title="In the separate layout, one Play plays the arohana and then the avarohana"><input type="checkbox" id="play-both-toggle" checked> Play both Arohana &amp; Avarohana</label>
+        <label id="transpose-both-label" title="In the separate layout, one Tonic shift moves the arohana and the avarohana together"><input type="checkbox" id="transpose-both-toggle" checked> Shift both Arohana &amp; Avarohana</label>
+        <label id="order-mode-label" title="Keep the order you pick swaras in, to find ragas with zig-zag (vakra) scales"><input type="checkbox" id="order-mode-toggle"> Record vakra swara order for search</label>
+        <label id="free-play-label" title="Play the keyboard freely, without selecting swaras or searching"><input type="checkbox" id="free-play-toggle"> Free play piano</label>
       </div>
     </div>
     </div>
   </section>
 
-  <!-- The input area (user, 2026-11-09): its title with the prompt beside it,
-       then Mute and Tanpura, then each block's controls. The title is the
-       area's in either layout ("Piano" in Free play); the separate layout's
-       blocks keep their own Arohana / Avarohana headings below. -->
-  <div class="input-area-head">
-    <h2 id="combined-title" class="input-area-title">Swara input</h2>
-    <!-- Word for word EMPTY_PROMPT in app.js, which replaces this the moment the
-         raga data lands. It exists so the empty state reads the same during the
-         load as it does after - and it says "swaras", not "keys", because only
-         one of the three input styles has keys. -->
-    <p id="prompt" class="prompt fades">Select some swaras to find matching ragas.</p>
-  </div>
-  <!-- Sound on and off, always on the page: reached for all the time, unlike
-       the fine settings behind the gear. -->
-  <div class="sound-row">
-    <button type="button" class="mute-btn" id="mute-btn" aria-pressed="false"></button>
-    <button type="button" class="mute-btn drone-btn" id="drone-btn" aria-pressed="false"></button>
-  </div>
-
   <div class="mode-block fades" id="combined-block">
     <div class="widget-header">
-      <button type="button" class="reset-btn" id="reset-btn">Clear</button>
+      <!-- Sound on and off, always on the page: reached for all the time, unlike
+           the fine settings behind the gear. At the head of the controls row
+           (user, 2026-11-10); app.js moves them to the Arohana block's row in
+           the separate layout (placeSoundRow). Their tooltips are set with
+           their state in app.js; their words hide where they would cost the
+           row a line (spec 10). -->
+      <div class="sound-row">
+        <button type="button" class="mute-btn" id="mute-btn" aria-pressed="false"></button>
+        <button type="button" class="mute-btn drone-btn" id="drone-btn" aria-pressed="false"></button>
+      </div>
+      <button type="button" class="reset-btn" id="reset-btn" title="Clear all the selected swaras">Clear</button>
       <div class="playback-controls" id="combined-controls">
-        <button id="play-btn">Play</button>
-        <label><input type="checkbox" id="loop-toggle"> Loop</label>
-        <fieldset class="tempo-pills" id="combined-tempo">
+        <button id="play-btn" title="Play the selected swaras, or stop them">Play</button>
+        <label title="Keep repeating until you press Stop"><input type="checkbox" id="loop-toggle"> Loop</label>
+        <fieldset class="tempo-pills" id="combined-tempo" title="Playback speed: half, normal, double or triple">
           <legend>Tempo</legend>
           <label><input type="radio" name="tempo-combined" data-tempo="0.5"> &frac12;x</label>
           <label><input type="radio" name="tempo-combined" data-tempo="1" checked> 1x</label>
@@ -221,6 +218,10 @@
     </div>
     <div class="transpose-row" id="combined-transpose">
       <div class="transpose-lead">
+        <!-- The keyboard's title, on the line directly above it ("Piano" in
+             Free play, set by app.js). Combined layout only: the separate
+             layout's blocks carry Arohana / Avarohana headings instead. -->
+        <h2 id="combined-title" class="input-area-title">Swara input</h2>
         <button type="button" class="set-zero-btn" id="combined-transpose-reset" title="Treat the current selection as the new zero point - no shift">Set as 0</button>
       </div>
       <div class="transpose-main">
@@ -234,7 +235,7 @@
           <!-- Whether the tanpura moves with this shift, headed like Tempo. The
                text states what happens now, not what the switch would do. One setting; the three
                rows' switches are views of it (app.js syncDroneFollow). -->
-          <fieldset class="drone-follow-set">
+          <fieldset class="drone-follow-set" title="Under a tonic shift, the tanpura stays on the original Sa or moves to the new one">
             <legend>Tanpura</legend>
             <label class="drone-follow" title="Under a tonic shift, the tanpura stays on the original Sa or moves to the new one">
               <input type="checkbox" data-drone-follow> <span class="drone-follow-slot"><span class="drone-follow-text">Original Sa</span></span>
@@ -249,11 +250,11 @@
     <div class="direction-block">
       <div class="widget-header">
         <h2>Arohana</h2>
-        <button type="button" class="reset-btn" id="arohana-reset-btn">Clear</button>
+        <button type="button" class="reset-btn" id="arohana-reset-btn" title="Clear the arohana's swaras">Clear</button>
         <div class="playback-controls" id="arohana-controls">
-          <button id="arohana-play-btn">Play</button>
-          <label><input type="checkbox" id="arohana-loop-toggle"> Loop</label>
-          <fieldset class="tempo-pills" id="arohana-tempo">
+          <button id="arohana-play-btn" title="Play the arohana, or stop it">Play</button>
+          <label title="Keep repeating until you press Stop"><input type="checkbox" id="arohana-loop-toggle"> Loop</label>
+          <fieldset class="tempo-pills" id="arohana-tempo" title="Playback speed: half, normal, double or triple">
             <legend>Tempo</legend>
             <label><input type="radio" name="tempo-arohana" data-tempo="0.5"> &frac12;x</label>
             <label><input type="radio" name="tempo-arohana" data-tempo="1" checked> 1x</label>
@@ -277,7 +278,7 @@
           <!-- Whether the tanpura moves with this shift, headed like Tempo. The
                text states what happens now, not what the switch would do. One setting; the three
                rows' switches are views of it (app.js syncDroneFollow). -->
-          <fieldset class="drone-follow-set">
+          <fieldset class="drone-follow-set" title="Under a tonic shift, the tanpura stays on the original Sa or moves to the new one">
             <legend>Tanpura</legend>
             <label class="drone-follow" title="Under a tonic shift, the tanpura stays on the original Sa or moves to the new one">
               <input type="checkbox" data-drone-follow> <span class="drone-follow-slot"><span class="drone-follow-text">Original Sa</span></span>
@@ -290,11 +291,11 @@
     <div class="direction-block">
       <div class="widget-header">
         <h2>Avarohana</h2>
-        <button type="button" class="reset-btn" id="avarohana-reset-btn">Clear</button>
+        <button type="button" class="reset-btn" id="avarohana-reset-btn" title="Clear the avarohana's swaras">Clear</button>
         <div class="playback-controls fades" id="avarohana-controls">
-          <button id="avarohana-play-btn">Play</button>
-          <label><input type="checkbox" id="avarohana-loop-toggle"> Loop</label>
-          <fieldset class="tempo-pills" id="avarohana-tempo">
+          <button id="avarohana-play-btn" title="Play the avarohana, or stop it">Play</button>
+          <label title="Keep repeating until you press Stop"><input type="checkbox" id="avarohana-loop-toggle"> Loop</label>
+          <fieldset class="tempo-pills" id="avarohana-tempo" title="Playback speed: half, normal, double or triple">
             <legend>Tempo</legend>
             <label><input type="radio" name="tempo-avarohana" data-tempo="0.5"> &frac12;x</label>
             <label><input type="radio" name="tempo-avarohana" data-tempo="1" checked> 1x</label>
@@ -318,7 +319,7 @@
           <!-- Whether the tanpura moves with this shift, headed like Tempo. The
                text states what happens now, not what the switch would do. One setting; the three
                rows' switches are views of it (app.js syncDroneFollow). -->
-          <fieldset class="drone-follow-set">
+          <fieldset class="drone-follow-set" title="Under a tonic shift, the tanpura stays on the original Sa or moves to the new one">
             <legend>Tanpura</legend>
             <label class="drone-follow" title="Under a tonic shift, the tanpura stays on the original Sa or moves to the new one">
               <input type="checkbox" data-drone-follow> <span class="drone-follow-slot"><span class="drone-follow-text">Original Sa</span></span>
@@ -330,7 +331,17 @@
     </div>
   </div>
 
-  <ul id="results" class="results"></ul>
+  <!-- The prompt sits where the results' count line will appear, and fades
+       out as it does. One pane for both, so a wide screen can give it a
+       column of its own (spec 10). -->
+  <div id="results-pane">
+    <!-- Word for word EMPTY_PROMPT in app.js, which replaces this the moment the
+         raga data lands. It exists so the empty state reads the same during the
+         load as it does after - and it says "swaras", not "keys", because only
+         one of the three input styles has keys. -->
+    <p id="prompt" class="prompt fades">Select some swaras to find matching ragas.</p>
+    <ul id="results" class="results"></ul>
+  </div>
   </div>
 
   <!-- A full view swapped in for #main-view, exactly like #search-view - not

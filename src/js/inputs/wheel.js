@@ -15,7 +15,7 @@
 // selection rather than to any one way of drawing it, and Piano wants them
 // too.
 import { DEGREES, degreeOf, SWARA_PALETTE, applySwaraColors, keyLabelHtml, labelForDegree, renderSelectionBox, stackReferenceLabel, swaraColor } from "../notation.js";
-import { playPianoTone } from "../audio.js";
+import { playNote } from "../audio.js";
 
 // All positions are in a 0-100 square coordinate space, applied as
 // percentages so the whole widget scales with its container.
@@ -164,6 +164,7 @@ export function render(container, props) {
   appendReferenceRing(root, labelPrefs, labelOffset);
 
   attachPointerHandlers(root, { selected, list, orderMode, onReplace, nodesByDegree, insertAt, labelOffset, saOffset });
+  fitWheelBottom(container, root);
 
   // Order mode only: the recorded positions live in the shared selection
   // box below, not on the wheel. Numbers on the nodes would stack and
@@ -459,7 +460,7 @@ function playTone(degree) {
   const now = performance.now();
   if (now - lastToneAt < TONE_MIN_GAP_MS) return;
   lastToneAt = now;
-  playPianoTone(degree);
+  playNote(degree);
 }
 
 // Hit-testing is angular, not element-based: the pointer position is
@@ -604,5 +605,43 @@ function attachPointerHandlers(root, { selected, list, orderMode, onReplace, nod
     if (!sweep || e.pointerId !== sweep.pointerId) return;
     for (const node of sweep.marked) node.classList.remove("selected");
     sweep = null;
+  });
+}
+
+// The wheel's box is a square, but what is drawn in it rarely reaches the
+// bottom: unrotated, the lowest thing is the ring node at 6 o'clock, a sixth of
+// the box above the edge, and the box's bottom only fills when S' (or, after a
+// shift, the reference ring) turns round to it. So the space under the drawing
+// is not reserved: the box is trimmed to the lowest thing actually drawn, and
+// when a rotation brings something lower, the trim eases out over a moment and
+// the results below are pushed down gently rather than jumping (user,
+// 2026-11-10). The trim is a fraction of the wheel's width (--wheel-trim, a
+// registered <number> so it can be animated), so it holds at any size.
+// Measured from the rendered nodes rather than worked out from the geometry,
+// so a label that grows or a new element is accounted for without this
+// knowing about it.
+const TRIM_PAD = 0.02; // a little air under the lowest thing drawn
+const TRIM_MS = 450;
+function fitWheelBottom(container, root) {
+  const box = root.getBoundingClientRect();
+  if (!box.width) return; // not laid out (a hidden block): leave the box whole
+  let lowest = box.top;
+  for (const el of root.querySelectorAll(".wheel-node, .wheel-ref-label, .wheel-repeat, .wheel-summary")) {
+    const r = el.getBoundingClientRect();
+    if (r.height) lowest = Math.max(lowest, r.bottom);
+  }
+  const trim = Math.max(0, (box.bottom - lowest) / box.width - TRIM_PAD);
+  const before = container._wheelTrim;
+  container._wheelTrim = trim;
+  root.style.setProperty("--wheel-trim", trim.toFixed(4));
+  // The root is new on every render, so the change is animated from the last
+  // render's trim rather than left to a CSS transition, which would need the
+  // same element both times. Both directions ease: turning back gives the
+  // space back just as gently as turning away took it.
+  const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (before === undefined || Math.abs(before - trim) < 0.001 || still) return;
+  root.animate([{ "--wheel-trim": before.toFixed(4) }, { "--wheel-trim": trim.toFixed(4) }], {
+    duration: TRIM_MS,
+    easing: "ease-in-out",
   });
 }
