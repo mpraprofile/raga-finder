@@ -3900,19 +3900,22 @@ h1 {
   font-style: normal;
 }
 
-/* The keyboard's title at the left of the Tonic shift line, Set as 0 beside
-   it. On a wide row the lead column stretches so the title sits at the left
-   edge and Set as 0 stays against the arrows. */
+/* The keyboard's title is kept for screen readers only (user, 2026-11-10:
+   on a phone it cost the Tonic shift line more room than it gave). It still
+   names the area - "Swara input", or "Piano" in Free play - as a heading. */
 .transpose-lead {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 0.5rem;
-  justify-self: stretch;
 }
 
 .transpose-lead .input-area-title {
-  font-size: 0.95rem;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
   white-space: nowrap;
 }
 
@@ -3926,10 +3929,6 @@ h1 {
 
   .transpose-lead {
     gap: 0.4rem;
-  }
-
-  .transpose-lead .input-area-title {
-    font-size: 0.88rem;
   }
 
   .set-zero-btn {
@@ -4063,5 +4062,132 @@ h1 {
 @media (max-height: 500px) and (orientation: landscape) {
   .wheel {
     --wheel-size: max(220px, calc(100dvh - 4.5rem));
+  }
+}
+
+/* Where the controls row breaks anyway (below 420px of block; 504px for the
+   Arohana row with its heading), Mute and Tanpura take the first line to
+   themselves and Clear leads the second, beside Play (user, 2026-11-10). The
+   sound pair takes the whole line, which is what sends Clear down. */
+@container (max-width: 419px) {
+  .mode-block .sound-row {
+    flex: 1 0 100%;
+  }
+}
+
+@container (max-width: 503px) {
+  /* The rest of the line after the Arohana heading (4.9rem + the gap). */
+  .direction-block .sound-row {
+    flex: 1 0 calc(100% - 5.3rem);
+  }
+}
+
+/* --- The Tanpura follow setting as a chip (user, 2026-11-10) -------------
+   The boxed switch was 125px wide; beside arrows centred on a 360px phone
+   there is about 77px. Now one tappable chip: a small "Tanpura" over an anchor
+   and the state in words. Anchored = stays on the original Sa; the anchor
+   struck through and tinted = moves with the shift. The checkbox stays for
+   keyboard and screen readers, hidden under the chip. */
+.drone-follow-set {
+  border: none;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+  margin: 0;
+}
+
+.drone-follow {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.05rem;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background: canvas;
+  font-size: 0.72rem;
+  line-height: 1.15;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+}
+
+.drone-follow:hover {
+  border-color: color-mix(in srgb, var(--card-border) 40%, var(--accent) 60%);
+}
+
+.drone-follow-set .drone-follow input[type="checkbox"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.drone-follow:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* "Tanpura" and the anchor on the first line, the state in words under them -
+   the anchor beside the word rather than the state keeps the chip inside the
+   ~77px a 360px phone leaves beside centred arrows. */
+.drone-follow-cap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.66rem;
+}
+
+.drone-follow-word {
+  opacity: 0.6;
+}
+
+/* A one-cell grid (the slot): the hidden longer label and the live one share
+   the cell, so the chip keeps one width in both states. */
+.drone-follow-state {
+  display: inline-grid;
+  white-space: nowrap;
+}
+
+.drone-follow-anchor {
+  flex: none;
+}
+
+.drone-follow-strike {
+  display: none;
+}
+
+.drone-follow:has(input:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, canvas);
+  color: var(--accent);
+}
+
+.drone-follow:has(input:checked) .drone-follow-strike {
+  display: inline;
+}
+
+/* Sized to the longer state, so a tap never changes the chip's width. */
+.drone-follow-slot::before {
+  content: "stays on Sa";
+}
+
+/* Phone: one line - Set as 0, the arrows centred on the screen, the chip. */
+@media (max-width: 559px) {
+  .transpose-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    column-gap: 0.35rem;
+  }
+
+  .transpose-lead {
+    justify-self: end;
+  }
+
+  .transpose-tail {
+    justify-self: start;
   }
 }

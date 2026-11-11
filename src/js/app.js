@@ -936,12 +936,41 @@ function promoteRegisterMatches(exact) {
 //
 // Never "both": if both directions equalled the selection then so would their
 // union, and the raga would already be a whole-scale exact match.
+//
+// Returns the form that matched as well as the direction. Every form is tried,
+// variants included, and when the hit is in a variant the row has to show and
+// play *that* scale - showing the usual one beside "exact (avarohana)" claimed
+// an exact match the visible avarohana did not have (Bhānudīpaka, user
+// 2026-11-10). See annotateMatch in ragas.js, which does the same for
+// whole-scale matches.
+//
+// Forms come from the stored record, not the row: a row whose "also contain"
+// match was made on a variant already carries that variant's scale, and
+// ragaForms on it would take the variant for the primary.
+const storedByIdCache = new WeakMap();
+function storedRaga(entry) {
+  let byId = storedByIdCache.get(ragas);
+  if (!byId) {
+    byId = new Map(ragas.map((r) => [r.id, r]));
+    storedByIdCache.set(ragas, byId);
+  }
+  return byId.get(entry.id) ?? entry;
+}
+
 function directionExactness(entry, pressed) {
-  for (const form of ragaForms(entry)) {
-    if (pitchSetsEqual(directionNoteSet(form.arohana), pressed)) return "arohana";
-    if (pitchSetsEqual(directionNoteSet(form.avarohana), pressed)) return "avarohana";
+  for (const form of ragaForms(storedRaga(entry))) {
+    if (pitchSetsEqual(directionNoteSet(form.arohana), pressed)) return { kind: "arohana", form };
+    if (pitchSetsEqual(directionNoteSet(form.avarohana), pressed)) return { kind: "avarohana", form };
   }
   return null;
+}
+
+// The row as the matched form: its scales, and matchedVariant set or cleared
+// to say which form that is. Cleared too, because the "also contain" match the
+// entry came from may have been made on a different form than this one.
+// ragaForms reads `variants` from the stored record, which the copy keeps.
+function asForm(entry, form) {
+  return { ...entry, arohana: form.arohana, avarohana: form.avarohana, matchedVariant: form.variant };
 }
 
 // Whole-scale exact first, then direction-exact, and inside each group the
@@ -951,10 +980,10 @@ function withDirectionExact(found, pressed) {
   const promoted = [];
   const rest = [];
   for (const entry of found.contains) {
-    const kind = directionExactness(entry, pressed);
-    if (kind) {
-      kinds.set(entry.id, kind);
-      promoted.push(entry);
+    const hit = directionExactness(entry, pressed);
+    if (hit) {
+      kinds.set(entry.id, hit.kind);
+      promoted.push(asForm(entry, hit.form));
     } else {
       rest.push(entry);
     }
@@ -2664,15 +2693,17 @@ function syncDroneTonic() {
 }
 
 // The follow switch beside each Tonic shift row: three views of one setting,
-// like the tempo pills, headed "Tanpura" the way they are headed "Tempo". Its
-// text says what happens now - "Original Sa" while the drone holds the Key's
-// Sa, "New Sa" while it moves with the shift.
+// like the tempo pills. A chip (user, 2026-11-10): "Tanpura", an anchor, and
+// what happens now - "stays on Sa" while the drone holds the Key's Sa, the
+// anchor struck through and "to new Sa" while it follows the shift. "moves to
+// new Sa" was the first choice; at 86px it did not fit the 77px beside centred
+// arrows on a 360px phone.
 function syncDroneFollow() {
   const follows = getSoundSettings().droneFollowsShift;
   for (const box of document.querySelectorAll("input[data-drone-follow]")) {
     box.checked = follows;
     box.closest(".drone-follow").querySelector(".drone-follow-text").textContent =
-      follows ? "New Sa" : "Original Sa"; // the slot in style.css is sized to the longer
+      follows ? "to new Sa" : "stays on Sa"; // the slot in style.css is sized to the longer
   }
 }
 

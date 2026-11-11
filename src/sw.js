@@ -10,7 +10,7 @@
 // out of. Network-first means anyone with connectivity always gets
 // current content; the cache exists purely for when they don't have any.
 
-const CACHE_NAME = "raga-finder-v34"; // bump whenever the precache list below changes
+const CACHE_NAME = "raga-finder-v37"; // bump whenever the precache list below changes
 
 const PRECACHE_URLS = [
   "./index.html",
